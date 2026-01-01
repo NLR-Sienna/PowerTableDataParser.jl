@@ -1,17 +1,36 @@
 name = "PowerTableDataParser"
 uuid = "bed98974-b02a-5e2f-9ee0-a103f5c450dd"
-authors = ["Daniel Thom, José Daniel Lara", "Hannah Chubin"]
 version = "1.0.0"
+authors = ["Daniel Thom, José Daniel Lara", "Hannah Chubin"]
 
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 InfrastructureSystems = "2cd47ed4-ca9b-11e9-27f2-ab636a7671f1"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+SiennaOpenAPIModels = "6f904ddb-d94b-53ea-97a4-b251110faebf"
+Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+
+[sources]
+PowerSystems = {path = "/Users/hchubin/SiennaRepos/PSY-for-PTDP.jl/"}
+SiennaOpenAPIModels = {path = "/Users/hchubin/SiennaRepos/SiennaGridDB/SiennaOpenAPIModels.jl/"}
 
 [compat]
+CSV = "0.10.15"
+DataFrames = "1.8.1"
 Dates = "1.11.0"
 DocStringExtensions = "~0.8, ~0.9"
-InfrastructureSystems = "2.6.0"
+InfrastructureSystems = "^3.1"
 JSON3 = "1.14.3"
+PowerSystems = "5.3.0"
+Revise = "3.12.3"
+SQLite = "1.6.1"
+Unicode = "1.11.0"
+YAML = "0.4.16"
 julia = "^1.6"
