@@ -8,6 +8,7 @@ module PowerTableDataParser
 export PowerSystemTableData
 export System
 export make_database
+export create_poly_cost
 
 #################################################################################
 # Imports
@@ -110,12 +111,41 @@ import PowerSystems:
     VariableReserve,
     add_service!,
     ReserveDown,
-    check
+    check,
+    get_components,
+    QuadraticCurve,
+    PiecewisePointCurve,
+    get_rating,
+    PiecewiseLinearData,
+    get_operation_cost,
+    get_active_power_limits_from,
+    add_time_series!,
+    get_start_up,
+    get_shut_down,
+    get_variable,
+    get_fixed,
+    get_available,
+    get_status,
+    get_active_power,
+    get_reactive_power,
+    get_prime_mover_type,
+    get_fuel,
+    get_active_power_limits,
+    get_reactive_power_limits,
+    get_ramp_limits,
+    get_time_limits,
+    get_time_at_status,
+    get_must_run
+
+import InfrastructureSystems:
+    DataFormatError
 
 #################################################################################
 # Includes
 
 include("power_system_table_data.jl")
+include("common.jl")
+include("utils/print.jl")
    
 #################################################################################
 

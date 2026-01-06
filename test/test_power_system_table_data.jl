@@ -15,20 +15,9 @@ import PowerSystems: LazyDictFromIterator
 end
 
 @testset "PowerSystemTableData parsing invalid directory" begin
-    @test_throws ErrorException PowerSystemTableData(DATA_DIR, 100.0, DESCRIPTORS)
+    @test_throws ErrorException PDP.PowerSystemTableData(DATA_DIR, 100.0, DESCRIPTORS)
 end
 
-@testset "Loading RTS CSV Data" begin
-rawsys = PowerSystemTableData(
-        RTS_DIR,
-        100.0,
-        joinpath(RTS_DIR, "user_descriptors.yaml");
-        timeseries_metadata_file = joinpath(RTS_DIR, "timeseries_pointers.json"),
-        generator_mapping_file = joinpath(MAP_DIR, "generator_mapping.yaml"),
-    )
-end
-
-#=
 @testset "Consistency between PowerSystemTableData and standardfiles" begin
     # This signature is used to capture expected error logs from parsing matpower
     consistency_test =
@@ -83,6 +72,11 @@ end
             mp_iter = get_components(ThermalGen, mpsys)
             mp_generators = LazyDictFromIterator(String, ThermalGen, mp_iter, get_name)
             for cdmgen in get_components(ThermalGen, cdmsys)
+                if isnothing(cdmgen)
+                    # Skips generators parsed from Matpower as SynchCondensers in PSY5
+                    # The fields are different so those aren't valiated in this loop
+                    continue
+                end
                 mpgen = get(mp_generators, uppercase(get_name(cdmgen)))
                 @test cdmgen.available == mpgen.available
                 @test lowercase(cdmgen.bus.name) == lowercase(mpgen.bus.name)
@@ -176,13 +170,13 @@ end
 
 @testset "Test consistency between variable cost and heat rate parsing" begin
     fivebus_dir = joinpath(DATA_DIR, "5-Bus")
-    rawsys_hr = PowerSystemTableData(
+    rawsys_hr = PDP.PowerSystemTableData(
         fivebus_dir,
         100.0,
         joinpath(fivebus_dir, "user_descriptors_var_cost.yaml");
         generator_mapping_file = joinpath(fivebus_dir, "generator_mapping.yaml"),
     )
-    rawsys = PowerSystemTableData(
+    rawsys = PDP.PowerSystemTableData(
         fivebus_dir,
         100.0,
         joinpath(fivebus_dir, "user_descriptors_var_cost.yaml");
@@ -212,7 +206,7 @@ end
         heat_rate_a1 = string(a1),
         heat_rate_a2 = string(a2),
     )
-    cost_curve, fixed_cost = create_poly_cost(example_generator, cost_colnames)
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
     @assert cost_curve isa QuadraticCurve
     @assert isapprox(get_quadratic_term(cost_curve), a2, atol = 0.01)
     @assert isapprox(get_proportional_term(cost_curve), a1, atol = 0.01)
@@ -225,7 +219,7 @@ end
         heat_rate_a1 = string(a1),
         heat_rate_a2 = nothing,
     )
-    cost_curve, fixed_cost = create_poly_cost(example_generator, cost_colnames)
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
     @assert cost_curve isa LinearCurve
     @assert isapprox(get_proportional_term(cost_curve), a1, atol = 0.01)
     @assert isapprox(get_constant_term(cost_curve), a0, atol = 0.01)
@@ -237,7 +231,7 @@ end
         heat_rate_a1 = string(a1),
         heat_rate_a2 = nothing,
     )
-    cost_curve, fixed_cost = create_poly_cost(example_generator, cost_colnames)
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
     @assert cost_curve isa LinearCurve
     @assert isapprox(get_proportional_term(cost_curve), a1, atol = 0.01)
 
@@ -248,21 +242,21 @@ end
         heat_rate_a1 = nothing,
         heat_rate_a2 = string(a2),
     )
-    @test_throws IS.DataFormatError create_poly_cost(example_generator, cost_colnames)
+    @test_throws IS.DataFormatError PDP.create_poly_cost(example_generator, cost_colnames)
     example_generator = (
         name = "test-gen",
         heat_rate_a0 = nothing,
         heat_rate_a1 = string(a1),
         heat_rate_a2 = string(a2),
     )
-    @test_throws IS.DataFormatError create_poly_cost(example_generator, cost_colnames)
+    @test_throws IS.DataFormatError PDP.create_poly_cost(example_generator, cost_colnames)
     example_generator = (
         name = "test-gen",
         heat_rate_a0 = string(a0),
         heat_rate_a1 = nothing,
         heat_rate_a2 = string(a2),
     )
-    @test_throws IS.DataFormatError create_poly_cost(example_generator, cost_colnames)
+    @test_throws IS.DataFormatError PDP.create_poly_cost(example_generator, cost_colnames)
 
     # Test that it works with zero proportional and constant term
     example_generator = (
@@ -271,10 +265,88 @@ end
         heat_rate_a1 = string(0.0),
         heat_rate_a2 = string(a2),
     )
-    cost_curve, fixed_cost = create_poly_cost(example_generator, cost_colnames)
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
     @assert cost_curve isa QuadraticCurve
     @assert isapprox(get_quadratic_term(cost_curve), a2, atol = 0.01)
     @assert isapprox(get_proportional_term(cost_curve), 0.0, atol = 0.01)
     @assert isapprox(get_constant_term(cost_curve), 0.0, atol = 0.01)
+
+    # Test that create_poly_cost works with numeric values (not just strings)
+    # Some CSV parsers return numeric types directly instead of strings
+    example_generator = (
+        name = "test-gen",
+        heat_rate_a0 = a0,  # Float64
+        heat_rate_a1 = a1,  # Float64
+        heat_rate_a2 = a2,  # Float64
+    )
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
+    @assert cost_curve isa QuadraticCurve
+    @assert isapprox(get_quadratic_term(cost_curve), a2, atol = 0.01)
+    @assert isapprox(get_proportional_term(cost_curve), a1, atol = 0.01)
+    @assert isapprox(get_constant_term(cost_curve), a0, atol = 0.01)
+
+    # Test with Int64 values (another common numeric type from CSV parsers)
+    example_generator = (
+        name = "test-gen",
+        heat_rate_a0 = Int64(9),
+        heat_rate_a1 = Int64(0),
+        heat_rate_a2 = Int64(0),
+    )
+    cost_curve, fixed_cost = PDP.create_poly_cost(example_generator, cost_colnames)
+    @assert cost_curve isa QuadraticCurve
+    @assert isapprox(get_quadratic_term(cost_curve), 0.0, atol = 0.01)
+    @assert isapprox(get_proportional_term(cost_curve), 0.0, atol = 0.01)
+    @assert isapprox(get_constant_term(cost_curve), 9.0, atol = 0.01)
 end
-=#
+
+@testset "Test parsing with ThermalMultiStart generators" begin
+    # Test that ThermalMultiStart generators parse correctly with multi-start costs
+    # This exercises the multi-start cost fallback logic in make_thermal_generator_multistart
+    rawsys = PDP.PowerSystemTableData(
+        RTS_GMLC_DIR,
+        100.0,
+        DESCRIPTORS;
+        generator_mapping_file = joinpath(
+            RTS_GMLC_DIR,
+            "generator_mapping_multi_start.yaml",
+        ),
+    )
+    sys = System(rawsys; time_series_resolution = Dates.Hour(1))
+
+    # Verify ThermalMultiStart generators were created
+    ms_gens = collect(get_components(ThermalMultiStart, sys))
+    @test length(ms_gens) > 0
+
+    # Check that startup costs were parsed correctly
+    for gen in ms_gens
+        op_cost = get_operation_cost(gen)
+        startup_costs = get_start_up(op_cost)
+        # Startup costs should be non-negative
+        @test startup_costs.hot >= 0.0
+        @test startup_costs.warm >= 0.0
+        @test startup_costs.cold >= 0.0
+    end
+end
+
+@testset "Test Reservoirs and Turbines" begin
+    cdmsys = PSB.build_system(
+        PSB.PSITestSystems,
+        "test_RTS_GMLC_sys";
+        force_build = true,
+    )
+    @test !isempty(get_components(HydroTurbine, cdmsys))
+    for turbine in get_components(HydroTurbine, cdmsys)
+        reservoir = get_connected_head_reservoirs(cdmsys, turbine)
+        @test !isempty(reservoir)
+        reservoir = get_connected_tail_reservoirs(cdmsys, turbine)
+        @test isempty(reservoir)
+    end
+
+    @test !isempty(get_components(HydroReservoir, cdmsys))
+
+    for reservoir in get_components(HydroReservoir, cdmsys)
+        turbines = get_downstream_turbines(reservoir)
+        @test !isempty(turbines)
+        @test isempty(get_upstream_turbines(reservoir))
+    end
+end
