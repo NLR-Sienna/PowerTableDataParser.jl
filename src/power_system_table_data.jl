@@ -1,6 +1,12 @@
+# power_system_inputs.json is used in PSY for things other than parsing
+# so for now the json file is copied in both repos, however the constant
+# POWER_SYSTEM_DESCRIPTOR_FILE is only needed here, so its commented out
+# of PSY
 const POWER_SYSTEM_DESCRIPTOR_FILE =
-    joinpath(dirname(pathof(PowerSystems)), "descriptors", "power_system_inputs.json")
+    joinpath(dirname(pathof(PowerTableDataParser)), "power_system_inputs.json")
 
+# constant INPUT_CATEGORY_NAMES and IS.@scoped_enum(InputCategory...) are
+# used here and in PSY, so for now they're both defined in both repos
 const INPUT_CATEGORY_NAMES = [
     ("branch", InputCategory.BRANCH),
     ("bus", InputCategory.BUS),
@@ -18,7 +24,7 @@ struct PowerSystemTableData
     directory::String
     user_descriptors::Dict
     descriptors::Dict
-    generator_mapping::Dict{NamedTuple, DataType}
+    generator_mapping::Dict{NamedTuple, String}
 end
 
 function PowerSystemTableData(
@@ -236,7 +242,7 @@ function PowerSystemTableData(
         error("No csv files or folders in $directory")
     end
 
-    generator_mapping = Dict{NamedTuple, DataType}()
+    generator_mapping = Dict{NamedTuple, String}()
     try
         generator_mapping = get_generator_mapping(generator_mapping_file)
     catch e
@@ -253,7 +259,7 @@ function PowerSystemTableData(
         timeseries_metadata_file = timeseries_metadata_file,
     )
 end
-
+#=
 """
 Return the custom name stored in the user descriptor file.
 
@@ -317,6 +323,22 @@ function iterate_rows(data::PowerSystemTableData, category; na_to_nothing = true
         end
     end
 end
+=#
+function _read_config_file(file_path::String)
+    return open(file_path) do io
+        data = YAML.load(io)
+        # Replace keys with enums.
+        config_data = Dict{InputCategory, Vector}()
+        for (key, val) in data
+            # TODO: need to change user_descriptors.yaml to use reserve instead.
+            if key == "reserves"
+                key = "reserve"
+            end
+            config_data[get_enum_value(InputCategory, key)] = val
+        end
+        return config_data
+    end
+end
 
 """
 Construct a System from [`PowerSystemTableData`](@ref) data.
@@ -342,6 +364,7 @@ Throws DataFormatError if time_series with multiple resolutions are detected.
 - A time_series has a different horizon than others.
 
 """
+#=
 function System(
     data::PowerSystemTableData;
     time_series_resolution = nothing,
@@ -387,7 +410,7 @@ function System(
     check(sys)
     return sys
 end
-
+=#
 
 #= making another method for System, so that essentially the function allows an optional argument database
 function System(
@@ -418,7 +441,7 @@ end
 Function that creates a database from System.
 
 """
-
+#= getting a circular dep issue with SiennaOpenAPIModels dep PSY
 function make_database(sys::System, database_name::Union{String, Nothing})
 
     # making sure that database_name isn't an existing file     
@@ -442,11 +465,12 @@ function make_database(sys::System, database_name::Union{String, Nothing})
         SiennaOpenAPIModels.serialize_timeseries!(db, sys, ids)
     end
 end
-
+=#
 """
 Add buses and areas to the System from the raw data.
 
 """
+#=
 function bus_csv_parser!(sys::System, data::PowerSystemTableData)
     for (ix, bus) in enumerate(iterate_rows(data, InputCategory.BUS))
         name = bus.name
@@ -516,10 +540,11 @@ function get_branch_type(
 
     return tap == 1.0 ? Transformer2W : TapTransformer
 end
-
+=#
 """
 Add branches to the System from the raw data.
 """
+#=
 function branch_csv_parser!(sys::System, data::PowerSystemTableData)
     available = true
 
@@ -756,6 +781,7 @@ end
 Add loads to the System from the raw load data.
 
 """
+
 function load_csv_parser!(sys::System, data::PowerSystemTableData)
     for rawload in iterate_rows(data, InputCategory.LOAD)
         bus = get_bus(sys, rawload.bus_id)
@@ -1777,22 +1803,6 @@ function _get_component_type_from_category(category::AbstractString)
     return component_type
 end
 
-function _read_config_file(file_path::String)
-    return open(file_path) do io
-        data = YAML.load(io)
-        # Replace keys with enums.
-        config_data = Dict{InputCategory, Vector}()
-        for (key, val) in data
-            # TODO: need to change user_descriptors.yaml to use reserve instead.
-            if key == "reserves"
-                key = "reserve"
-            end
-            config_data[get_enum_value(InputCategory, key)] = val
-        end
-        return config_data
-    end
-end
-
 """Stores user-customized information for required dataframe columns."""
 struct _FieldInfo
     name::String
@@ -1961,3 +1971,4 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
     end
     return NamedTuple{Tuple(Symbol.(fields))}(vals)
 end
+=#

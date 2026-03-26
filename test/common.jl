@@ -12,7 +12,7 @@ function get_branch(sys::System, other::Branch)
 
     error("Did not find branch with buses $(other.arc.from.name) ", "$(other.arc.to.name)")
 end
-
+#=
 function create_rts_system(time_series_resolution = Dates.Hour(1))
     data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
     return System(data; time_series_resolution = time_series_resolution)
