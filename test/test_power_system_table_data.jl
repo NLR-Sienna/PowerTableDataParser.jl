@@ -22,7 +22,7 @@ end
     # This signature is used to capture expected error logs from parsing matpower
     consistency_test =
         () -> begin
-            mpsys = System(joinpath(BAD_DATA, "RTS_GMLC_original.m"))
+            mpsys = PSY.System(joinpath(BAD_DATA, "RTS_GMLC_original.m"))
             cdmsys = PSB.build_system(
                 PSB.PSITestSystems,
                 "test_RTS_GMLC_sys";
@@ -182,8 +182,8 @@ end
         joinpath(fivebus_dir, "user_descriptors_var_cost.yaml");
         generator_mapping_file = joinpath(fivebus_dir, "generator_mapping.yaml"),
     )
-    sys_hr = System(rawsys_hr)
-    sys = System(rawsys)
+    sys_hr = PSY.System(rawsys_hr)
+    sys = PSY.System(rawsys)
 
     g_hr = get_components(ThermalStandard, sys_hr)
     g = get_components(ThermalStandard, sys)
@@ -311,7 +311,7 @@ end
             "generator_mapping_multi_start.yaml",
         ),
     )
-    sys = System(rawsys; time_series_resolution = Dates.Hour(1))
+    sys = PSY.System(rawsys; time_series_resolution = Dates.Hour(1))
 
     # Verify ThermalMultiStart generators were created
     ms_gens = collect(get_components(ThermalMultiStart, sys))
