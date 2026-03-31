@@ -17,9 +17,13 @@ const INPUT_CATEGORY_NAMES = [
     ("storage", InputCategory.STORAGE),
 ]
 
+# Convert InputCategory enum to Symbol key for dictionary lookup.
+# Using Symbol keys avoids type incompatibility with PowerSystems.jl's InputCategory.
+_category_key(category::InputCategory) = Symbol(string(category))
+
 struct PowerSystemTableData
     base_power::Float64
-    category_to_df::Dict{InputCategory, DataFrames.DataFrame}
+    category_to_df::Dict{Symbol, DataFrames.DataFrame}
     timeseries_metadata_file::Union{String, Nothing}
     directory::String
     user_descriptors::Dict
@@ -35,7 +39,7 @@ function PowerSystemTableData(
     generator_mapping::Dict;
     timeseries_metadata_file = joinpath(directory, "timeseries_pointers"),
 )
-    category_to_df = Dict{InputCategory, DataFrames.DataFrame}()
+    category_to_df = Dict{Symbol, DataFrames.DataFrame}()
 
     if !haskey(data, "bus")
         throw(DataFormatError("key 'bus' not found in input data"))
@@ -52,7 +56,8 @@ function PowerSystemTableData(
             @debug "key '$name' not found in input data, set to nothing" _group =
                 IS.LOG_GROUP_PARSING
         else
-            category_to_df[category] = val
+            # Use Symbol key for compatibility with PowerSystems.jl
+            category_to_df[Symbol(string(category))] = val
         end
     end
 
@@ -327,14 +332,14 @@ end
 function _read_config_file(file_path::String)
     return open(file_path) do io
         data = YAML.load(io)
-        # Replace keys with enums.
-        config_data = Dict{InputCategory, Vector}()
+        # Use Symbol keys for compatibility with PowerSystems.jl
+        config_data = Dict{Symbol, Vector}()
         for (key, val) in data
             # TODO: need to change user_descriptors.yaml to use reserve instead.
             if key == "reserves"
                 key = "reserve"
             end
-            config_data[get_enum_value(InputCategory, key)] = val
+            config_data[Symbol(uppercase(key))] = val
         end
         return config_data
     end
@@ -752,7 +757,7 @@ function cache_storage(data::PowerSystemTableData)
     storage = Dict{String, Any}()
     gen_head_dict = Dict()
     gen_tail_dict = Dict()
-    if !haskey(data.category_to_df, InputCategory.STORAGE)
+    if !haskey(data.category_to_df, _category_key(InputCategory.STORAGE))
         return gen_head_dict, gen_tail_dict
     end
     for s in iterate_rows(data, InputCategory.STORAGE)
@@ -1524,7 +1529,7 @@ function _make_hydro_reservoirs(
     gen_storage,
     tail_required::Bool,
 )
-    if !haskey(data.category_to_df, InputCategory.STORAGE)
+    if !haskey(data.category_to_df, _category_key(InputCategory.STORAGE))
         throw(DataFormatError("Storage information must defined in storage.csv"))
     end
 
