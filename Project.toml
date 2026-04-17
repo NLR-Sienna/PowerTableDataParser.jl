@@ -1,5 +1,5 @@
 name = "PowerTableDataParser"
-uuid = "2b750c0e-0b6f-11f1-9200-1befd75df6be"
+uuid = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 version = "1.0.0"
 authors = ["Daniel Thom, José Daniel Lara", "Hannah Chubin"]
 
