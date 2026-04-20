@@ -20,14 +20,14 @@ makedocs(
     format = Documenter.HTML(
         prettyurls = haskey(ENV, "GITHUB_ACTIONS"),
         size_threshold = nothing,),
-    sitename = "github.com/NREL-Sienna/PowerTableDataParser.jl",
+    sitename = "github.com/NLR-Sienna/PowerTableDataParser.jl",
     authors = "José Daniel Lara",
     pages = Any[p for p in pages],
     draft = false,
 )
 
 deploydocs(
-    repo="github.com/NREL-Sienna/PowerTableDataParser.jl",
+    repo="github.com/NLR-Sienna/PowerTableDataParser.jl",
     target="build",
     branch="gh-pages",
     devbranch="main",
