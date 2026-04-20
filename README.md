@@ -1,5 +1,4 @@
 # PowerTableDataParser.jl
-
 [![Main - CI](https://github.com/NLR-Sienna/PowerTableDataParser.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/NLR-Sienna/PowerTableDataParser.jl/actions/workflows/main-tests.yml)
 [![codecov](https://codecov.io/gh/NLR-Sienna/PowerTableDataParser.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/NLR-Sienna/PowerTableDataParser.jl)
 [![Documentation Build](https://github.com/NLR-Sienna/PowerTableDataParser.jl/workflows/Documentation/badge.svg?)](https://nlr-sienna.github.io/PowerTableDataParser.jl/stable)
