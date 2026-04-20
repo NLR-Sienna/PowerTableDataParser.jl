@@ -100,11 +100,11 @@ Reads in all the data stored in csv files in a `directory`
     utility functions to translate from .csv files to the database, but there will probably
     be a gap in support. **Users are recommended to write their own custom Julia code to
     import data from their unique data formats, rather than relying on this parsing
-    code.** See [How-to Build a `System` from CSV Files](@ref system_from_csv) for an example.
+    code.**
 
 # Arguments
 - `directory::AbstractString`: directory containing CSV files
-- `base_power::Float64`: base power for [`System`](@ref)
+- `base_power::Float64`: base power for the `PowerSystems.System`
 - `user_descriptor_file::AbstractString`: customized input descriptor file. [Example](https://github.com/NLR-Sienna/PowerSystemsTestData/blob/master/RTS_GMLC/user_descriptors.yaml)
 - `descriptor_file=POWER_SYSTEM_DESCRIPTOR_FILE`: `PowerSystems.jl` descriptor file. [Default](https://github.com/NLR-Sienna/PowerSystems.jl/blob/main/src/descriptors/power_system_inputs.json)
 - `generator_mapping_file=GENERATOR_MAPPING_FILE_CDM`: generator mapping configuration file. [Default](https://github.com/NLR-Sienna/PowerSystems.jl/blob/main/src/parsers/generator_mapping_cdm.yaml)
@@ -124,7 +124,7 @@ The general format for data in the `directory` is:
 
 # Custom construction of generators
 
-Each generator will be defined as a concrete subtype of [`Generator`](@ref),
+Each generator will be defined as a concrete subtype of `PowerSystems.Generator`,
 based on the `fuel` and `type` columns in `gen.csv` and the `generator_mapping_file`.
 The default mapping file
 is [`src/parsers/generator_mapping.yaml`](https://github.com/NLR-Sienna/PowerSystems.jl/blob/main/src/parsers/generator_mapping.yaml). You can override this behavior by specifying your own file.
