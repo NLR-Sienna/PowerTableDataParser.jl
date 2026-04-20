@@ -5,5 +5,5 @@ DocumenterInterLinks = "d12716ef-a0f6-4df4-a9f1-a5a34e75c656"
 PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 
 [compat]
-julia = "^1.6"
+julia = "^1.10"
 Documenter = "^1.0"
