@@ -34,12 +34,12 @@ end
 function get_enum_value(enum, value::AbstractString)
     if !haskey(ENUM_MAPPINGS, enum)
         throw(ArgumentError("enum=$enum is not valid"))
-    end 
+    end
 
     val = normalize(value; casefold = true)
     if !haskey(ENUM_MAPPINGS[enum], val)
         throw(ArgumentError("enum=$enum does not have value=$val"))
-    end 
+    end
 
     return ENUM_MAPPINGS[enum][val]
 end

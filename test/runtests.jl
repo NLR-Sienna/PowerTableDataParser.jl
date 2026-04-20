@@ -17,7 +17,7 @@ import Aqua
 Aqua.test_unbound_args(PowerTableDataParser)
 Aqua.test_undefined_exports(PowerTableDataParser)
 Aqua.test_ambiguities(PowerTableDataParser)
-Aqua.test_stale_deps(PowerTableDataParser) 
+Aqua.test_stale_deps(PowerTableDataParser)
 Aqua.test_deps_compat(PowerTableDataParser)
 
 const DATA_DIR = PSB.DATA_DIR
@@ -107,7 +107,7 @@ function run_tests()
         end
 
         # Testing Topological components of the schema
-        @time @testset "Begin SIENNA-PACKAGE tests" begin
+        @time @testset "Begin PowerTableDataParser tests" begin
             @includetests ARGS
         end
 

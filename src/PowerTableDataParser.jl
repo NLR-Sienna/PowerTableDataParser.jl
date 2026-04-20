@@ -28,7 +28,7 @@ import InfrastructureSystems:
 include("common.jl")
 include("enums.jl")
 include("power_system_table_data.jl")
-   
+
 #################################################################################
 
 using DocStringExtensions
