@@ -4,14 +4,17 @@ using PowerTableDataParser
 
 pages = OrderedDict(
     "Welcome Page" => "index.md",
-    "Tutorials" => Any["stub" => "tutorials/stub.md"],
-    "How to..." => Any["stub" => "how_to_guides/stub.md"],
-    "Explanation" => Any["stub" => "explanation/stub.md"],
+    "Tutorials" => Any["Overview" => "tutorials/intro_page.md"],
+    "How to..." => Any[
+        "Parse Tabular Data from .csv Files" => "how_to_guides/parse_tabular_data.md",
+    ],
+    "Explanation" => Any[
+        "Parser Structure and Inputs" => "explanation/structure.md",
+    ],
     "Reference" => Any[
         "Developers" => ["Developer Guidelines" => "reference/developer_guidelines.md",
-        "Internals" => "reference/internal.md"],
+            "Internals" => "reference/internal.md"],
         "Public API" => "reference/public.md",
-        "Stub" => "reference/stub.md"
     ],
 )
 
