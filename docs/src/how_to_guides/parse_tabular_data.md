@@ -1,37 +1,49 @@
 # [Parse Tabular Data from .csv Files](@id table_data)
 
-This parser, called the tabular data parser, is a custom format that allows users to define
-power system component data by category and column with custom names, types, and units.
+```@meta
+CurrentModule = PowerTableDataParser
+```
 
-## Categories
+This guide walks through parsing a directory of CSV files into a
+[`PowerSystemTableData`](@ref) object and handing it to `PowerSystems.jl` to
+build a `System`. For the conceptual background on *how* the parser combines
+CSV, YAML, and time-series inputs, see
+[Parser Structure and Inputs](@ref structure).
 
-Components for each category must be defined in their own CSV file. The
-following categories are currently supported:
+## Minimal usage
 
-  - branch.csv
+If your CSV files already follow the PowerSystems-standard column names and
+units, a minimal invocation looks like this:
 
-  - bus.csv (required)
+```julia
+using PowerTableDataParser
+using PowerSystems
 
-      + columns specifying `area` and `zone` will create a corresponding set of `Area` and `LoadZone` objects.
-      + columns specifying `max_active_power` or `max_reactive_power` will create `PowerLoad` objects when nonzero values are encountered and will contribute to the `peak_active_power` and `peak_reactive_power` values for the
-        corresponding `LoadZone` object.
-  - dc_branch.csv
-  - gen.csv
-  - load.csv
-  - reserves.csv
-  - storage.csv
+data_dir = "/data/my-data-dir"
+base_power = 100.0
+descriptors = joinpath(data_dir, "user_descriptors.yaml")
 
-These must reside in the directory passed when constructing PowerSystemTableData.
+data = PowerSystemTableData(data_dir, base_power, descriptors)
+sys = System(data; time_series_in_memory = true)
+```
 
-## Customization
+This call will:
 
-The tabular data parser in `PowerSystems.jl` can be customized to read a variety of
-datasets by configuring:
+ 1. Discover and read every `*.csv` in `data_dir` (and one level of
+    sub-directories).
+ 2. Require that `bus.csv` exists; other category files are optional.
+ 3. Load `user_descriptors.yaml` and merge it with the built-in default
+    descriptor [`power_system_inputs.json`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/power_system_inputs.json).
+ 4. Load the bundled default
+    [`generator_mapping_cdm.yaml`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/generator_mapping_cdm.yaml)
+    to resolve `(fuel, type)` pairs in `gen.csv` to concrete `Generator`
+    subtypes.
+ 5. Look for a `timeseries_pointers.json` (or `.csv`) in `data_dir`; if found,
+    attach it so `System` can load time series.
 
-  - [which type of generator (`<:Generator`) to create based on the fuel and prime mover specifications](@ref csv_genmap)
-  - [property names](@ref csv_columns), [units](@ref csv_units), and [per units conversions](@ref csv_per_unit) in *.csv files
+## Full usage with overrides
 
-Here is an example of how to construct a System with all customizations listed in this section:
+To override both the generator mapping and the time-series pointer file:
 
 ```julia
 data_dir = "/data/my-data-dir"
@@ -39,125 +51,207 @@ base_power = 100.0
 descriptors = "./user_descriptors.yaml"
 timeseries_metadata_file = "./timeseries_pointers.json"
 generator_mapping_file = "./generator_mapping.yaml"
+
 data = PowerSystemTableData(
     data_dir,
     base_power,
     descriptors;
-    timeseries_metadata_file = timeseries_metadata_file,
     generator_mapping_file = generator_mapping_file,
+    timeseries_metadata_file = timeseries_metadata_file,
 )
 sys = System(data; time_series_in_memory = true)
 ```
 
-Examples configuration files can be found in the [RTS-GMLC](https://github.com/GridMod/RTS-GMLC/) repo:
+Example configuration files can be found in the
+[RTS-GMLC](https://github.com/GridMod/RTS-GMLC/) repository:
 
   - [user_descriptors.yaml](https://github.com/GridMod/RTS-GMLC/blob/master/RTS_Data/FormattedData/SIIP/user_descriptors.yaml)
   - [generator_mapping.yaml](https://github.com/GridMod/RTS-GMLC/blob/master/RTS_Data/FormattedData/SIIP/generator_mapping.yaml)
+  - [timeseries_pointers.json](https://github.com/GridMod/RTS-GMLC/blob/master/RTS_Data/FormattedData/SIIP/timeseries_pointers.json)
 
-## [CSV Data Configurations](@id csv_data)
+## Supported categories
+
+Components for each category must be defined in their own CSV file. The
+following categories are currently supported:
+
+  - `bus.csv` (**required**)
+
+      + Columns named `area` and `zone` create a corresponding set of `Area`
+        and `LoadZone` objects.
+      + Columns named `max_active_power` or `max_reactive_power` create
+        `PowerLoad` objects when nonzero values are encountered, and
+        contribute to the `peak_active_power` / `peak_reactive_power` of the
+        corresponding `LoadZone`.
+
+  - `branch.csv`
+  - `dc_branch.csv`
+  - `gen.csv`
+  - `load.csv`
+  - `reserves.csv`
+  - `storage.csv`
+
+All of these files must reside in the directory passed to
+[`PowerSystemTableData`](@ref), or inside a single level of alphabetical
+sub-folders within it.
+
+## [CSV data configurations](@id csv_data)
 
 ### [Custom construction of generators](@id csv_genmap)
 
-`PowerSystems` supports custom construction of subtypes of the abstract type Generator based
-on `fuel` and `type`. The parsing code detects these fields in the raw data and then
-constructs the concrete type listed in the passed generator mapping file. The default file
-is `src/parsers/generator_mapping.yaml`. You can override this behavior by specifying your
-own file when constructing `PowerSystemTableData`.
+`PowerTableDataParser` constructs concrete subtypes of `Generator` based on
+the `fuel` and `type` columns in `gen.csv` and the `generator_mapping_file`.
+The default file is [`src/generator_mapping_cdm.yaml`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/generator_mapping_cdm.yaml);
+override it by passing your own via the `generator_mapping_file` keyword.
+
+Each top-level key in the YAML is a target `Generator` subtype, and its value
+is a list of `(fuel, type)` pairs that should map to that subtype:
+
+```yaml
+ThermalStandard:
+  - {fuel: COAL, type: null}
+  - {fuel: NG,   type: null}
+
+RenewableDispatch:
+  - {fuel: SOLAR, type: PV}
+  - {fuel: WIND,  type: WIND}
+```
+
+A `null` `type` acts as a wildcard for any `type` value with that `fuel`.
+Duplicate `(fuel, type)` entries raise an error.
 
 ### [Column names](@id csv_columns)
 
-`PowerSystems` provides am input mapping capability that allows you to keep your own
-column names.
+`PowerTableDataParser` provides an input-mapping layer so you can keep your
+own column names. For example, when parsing raw data for a generator the
+parser expects a column called `name`. If the raw data instead defines that
+column as `GEN UID`, set the `custom_name` field under the `generator`
+category in your `user_descriptors.yaml`:
 
-For example, when parsing raw data for a generator the code expects a column
-called `name`. If the raw data instead defines that column as `GEN UID` then
-you can change the `custom_name` field under the `generator` category to
-`GEN UID` in your YAML file.
-
-To enable the parsing of a custom set of csv files, you can generate a configuration
-file (such as `user_descriptors.yaml`) from the defaults, which are stored
-in `src/descriptors/power_system_inputs.json`.
-
-```python
-python ./bin/generate_config_file.py ./user_descriptors.yaml
+```yaml
+generator:
+  - name: name
+    custom_name: GEN UID
 ```
 
-Next, edit this file with your customizations.
+To build a complete `user_descriptors.yaml` from scratch, start from the
+defaults defined in
+[`src/power_system_inputs.json`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/power_system_inputs.json)
+and copy the entries you need, adding `custom_name`, `unit`, or `unit_system`
+overrides as appropriate. The user-specific customizations are intentionally
+kept in YAML rather than JSON to make them easier to edit by hand. *Do not
+edit the default JSON file.*
 
-Note that the user-specific customizations are stored in YAML rather than JSON
-to allow for easier editing. The next few sections describe changes you can
-make to this YAML file.  Do not edit the default JSON file.
+### [Per-unit conversion](@id csv_per_unit)
 
-## [Per-unit conversion](@id csv_per_unit)
+`PowerTableDataParser` defines whether it expects a column value to be
+per-unit system base, per-unit device base, or in natural units via the
+`unit_system` field in `power_system_inputs.json`. If it expects a per-unit
+convention that differs from your values, set `unit_system` in
+`user_descriptors.yaml` and the parser will automatically convert the values.
 
-For more info on the per-unit conventions in `PowerSystems.jl`, refer to the [per-unit
-section of the system documentation](@ref per_unit).
-
-`PowerSystems` defines whether it expects a column value to be per-unit system base,
-per-unit device base, or natural units in `power_system_inputs.json`. If it expects a
-per-unit convention that differs from your values then you can set the `unit_system` in
-`user_descriptors.yaml` and `PowerSystems` will automatically convert the values. For
-example, if you have a `max_active_power` value stored in natural units (MW), but
-`power_system_inputs.json` specifies `unit_system: device_base`, you can enter
-`unit_system: natural_units` in `user_descriptors.yaml` and `PowerSystems` will divide
-the value by the value of the corresponding entry in the column identified by the
-`base_reference` field in `power_system_inputs.json`. You can also override the
-`base_reference` setting by adding `base_reference: My Column` to make device base
-per-unit conversion by dividing the value by the entry in `My Column`. System base
-per-unit conversions always divide the value by the system `base_power` value
-instantiated when constructing a `System`.
+For example, if you have a `max_active_power` column stored in natural units
+(MW) but `power_system_inputs.json` specifies `unit_system: device_base`, add
+`unit_system: natural_units` in `user_descriptors.yaml` and the parser will
+divide the value by the entry in the column identified by the
+`base_reference` field in `power_system_inputs.json`. You can also override
+`base_reference` by adding `base_reference: My Column` to make the device-base
+per-unit conversion divide by `My Column` instead. System-base per-unit
+conversions always divide by the `base_power` passed to the
+`PowerSystemTableData` constructor.
 
 ### [Unit conversion](@id csv_units)
 
-`PowerSystems` provides a limited set of unit conversions. For example, if
-`power_system_inputs.json` indicates that a value's unit is degrees but
-your values are in radians then you can set `unit: radian` in
-your YAML file. Other valid `unit` entries include `GW`, `GWh`, `MW`, `MWh`, `kW`,
-and `kWh`.
+The parser supports a limited set of unit conversions. For example, if
+`power_system_inputs.json` indicates a value's unit is `degree` but your
+values are in radians, set `unit: radian` in your YAML file. Other valid
+`unit` entries include `GW`, `GWh`, `MW`, `MWh`, `kW`, and `kWh`.
 
-## Extending the Tabular Data Parser
+## Attaching time series
 
-This section describes how developers should read columns from raw data files, and
-assumes you are familiar with the sections above.
+`PowerSystems.jl` requires a metadata file that associates components with
+their time-series data. `PowerTableDataParser` accepts either a JSON or CSV
+pointer file via the `timeseries_metadata_file` keyword; the default search
+path is `joinpath(directory, "timeseries_pointers")`, with `.json` and `.csv`
+tried in that order.
 
-The main point is that you should not read individual hard-coded column names from
-DataFrames. The parsing code includes mapping functionality that allows you to
-use PowerSystems-standard names while letting the users define their own custom
-names.
+Each entry in the pointer file must provide:
+
+  - `simulation` — user description of the simulation
+  - `resolution` — resolution of the time series in seconds
+  - `module` — module that defines the abstract type of the component
+  - `category` — component type (`Bus`, `ElectricLoad`, `Generator`,
+    `LoadZone`, `Reserve`)
+  - `component_name` — name of the component
+  - `name` — user-defined name for the time-series data
+  - `normalization_factor` — `1.0` for pre-normalized data, `"Max"` to divide
+    by the column max, or a numeric scaling factor
+  - `scaling_factor_multiplier_module` — module that defines the scaling
+    factor accessor
+  - `scaling_factor_multiplier` — accessor function name
+  - `data_file` — path to the time-series data file
+
+The `module`, `category`, and `component_name` entries must be valid
+arguments to `get_component(${module}.${category}, sys, $name)`. The
+`scaling_factor_multiplier_module` and `scaling_factor_multiplier` entries
+must be sufficient to return the scaling factor data via
+`${scaling_factor_multiplier_module}.${scaling_factor_multiplier}(component)`.
+
+See
+[RTS-GMLC](https://github.com/GridMod/RTS-GMLC/blob/master/RTS_Data/FormattedData/SIIP/timeseries_pointers.json)
+for a worked example.
+
+!!! note "Time-series storage"
+
+    By default `PowerSystems.jl` stores time-series data in HDF5 files and
+    reads them on demand. Pass `time_series_in_memory = true` to `System`
+    when your data fits in memory; pass `time_series_directory = X` to point
+    the HDF5 store at a specific directory, or set the environment variable
+    `SIENNA_TIME_SERIES_DIRECTORY`.
+
+## Extending the tabular parser
+
+This section is for developers who want to teach the parser about new
+columns. It assumes familiarity with the sections above.
+
+The key rule is: do not read hard-coded column names out of DataFrames. Use
+the descriptor layer so PowerSystems-standard names stay decoupled from
+whatever the user happens to call their column.
 
 ### Procedure
 
  1. Add an entry to the array of parameters for your category in
-    `src/descriptors/power_system_inputs.json` according to the following:
+    [`src/power_system_inputs.json`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/power_system_inputs.json)
+    following these rules:
 
-     1. Use `snake_case` for the name field.
-     2. The fields `name` and `description` are required.
-     3. Try to use a name that is generic and not specific to one dataset.
-     4. It is recommended that you define `unit`.
-     5. If PowerSystems expects the value to be per-unit then you must specify
-        `system_per_unit=true`.
+     1. Use `snake_case` for `name`.
+     2. `name` and `description` are required.
+     3. Prefer a name that is generic and not dataset-specific.
+     4. Define `unit` when applicable.
+     5. If the parser should treat the value as system per-unit, set
+        `system_per_unit: true`.
 
- 2. PowerSystems has two commonly-used datasets with customized user config
-    files:
-    [PowerSystemsTestData](https://github.com/NREL/PowerSystemsTestData/blob/main/RTS_GMLC/user_descriptors.yaml)
-    and
-    [RTS_GMLC](https://github.com/GridMod/RTS-GMLC/blob/master/RTS_Data/FormattedData/SIIP/user_descriptors.yaml).
-    Update both of these files and submit pull requests.
- 3. Parse the raw data like in this example:
+ 2. If you maintain widely-used user descriptor files (e.g. the RTS-GMLC
+    SIIP config), update them and submit pull requests so downstream users
+    pick up the new field.
+
+ 3. Consume the new column in your parsing code like this:
 
 ```julia
 function demo_bus_csv_parser!(data::PowerSystemTableData)
-    for bus in iterate_rows(data, BUS::InputCategory)
+    for bus in iterate_rows(data, InputCategory.BUS)
         @show bus.name, bus.max_active_power, bus.max_reactive_power
     end
 end
 ```
 
-`iterate_rows` returns a NamedTuple where each `name` defined in
-`src/descriptors/power_system_inputs.json` is a field.
+`iterate_rows` returns a `NamedTuple` whose fields are the `name` entries
+defined in `power_system_inputs.json`, already translated from the user's
+column names and unit conventions.
 
-### See also:
+!!! warning "Deprecation"
 
-  - Parsing [Matpower or PSS/e RAW Files](@ref pm_data)
-  - Parsing [PSS/e DYR Files](@ref dyr_data)
-  - Parsing [time series](@ref parsing_time_series)
+    The tabular parser is in long-term maintenance mode. `PowerSystems.jl`
+    will eventually move to a database-backed data layer, and new datasets
+    are encouraged to ship a small custom Julia importer rather than depend
+    on this parser. This package exists to keep existing CDM-based workflows
+    working while that transition proceeds.

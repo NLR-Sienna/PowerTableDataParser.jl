@@ -1,4 +1,5 @@
-# SIENNA-Examples
+# PowerTableDataParser.jl Tutorials
 
-All the tutorials for the SIENNA project are part of a separate repository
-[SIENNA-Examples](https://github.com/NLR-SIENNA/SIENNAExamples.jl).
+Tutorials and usage examples for
+[PowerTableDataParser.jl](https://github.com/NLR-Sienna/PowerTableDataParser.jl)
+will be added here.
