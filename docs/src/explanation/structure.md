@@ -32,8 +32,7 @@ directly: the user descriptor YAML overrides entries in it.
 
 ## The parsing flow
 
-At a high level, construction of `PowerSystemTableData(directory, base_power,
-user_descriptor_file; ...)` proceeds in four phases:
+At a high level, construction of `PowerSystemTableData(directory, base_power, user_descriptor_file; ...)` proceeds in four phases:
 
 ```text
  ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
@@ -198,15 +197,15 @@ YAML.
 The package currently recognizes the categories listed in
 `INPUT_CATEGORY_NAMES`:
 
-| CSV file        | Category enum               | Required? |
-|-----------------|-----------------------------|-----------|
-| `bus.csv`       | `InputCategory.BUS`         | **yes**   |
-| `branch.csv`    | `InputCategory.BRANCH`      | no        |
-| `dc_branch.csv` | `InputCategory.DC_BRANCH`   | no        |
-| `gen.csv`       | `InputCategory.GENERATOR`   | no        |
-| `load.csv`      | `InputCategory.LOAD`        | no        |
-| `reserves.csv`  | `InputCategory.RESERVE`     | no        |
-| `storage.csv`   | `InputCategory.STORAGE`     | no        |
+| CSV file        | Category enum             | Required? |
+|:--------------- |:------------------------- |:--------- |
+| `bus.csv`       | `InputCategory.BUS`       | **yes**   |
+| `branch.csv`    | `InputCategory.BRANCH`    | no        |
+| `dc_branch.csv` | `InputCategory.DC_BRANCH` | no        |
+| `gen.csv`       | `InputCategory.GENERATOR` | no        |
+| `load.csv`      | `InputCategory.LOAD`      | no        |
+| `reserves.csv`  | `InputCategory.RESERVE`   | no        |
+| `storage.csv`   | `InputCategory.STORAGE`   | no        |
 
 Two conventions on `bus.csv` are worth calling out explicitly:
 
@@ -226,15 +225,15 @@ there is no corresponding top-level CSV file name wired up in
 After construction, `PowerSystemTableData` is simply a container holding the
 pieces above:
 
-| Field                         | What it holds                                               |
-|-------------------------------|-------------------------------------------------------------|
-| `base_power`                  | System base MVA (defaults to 100.0 if not provided)         |
-| `category_to_df`              | `Dict{Symbol, DataFrame}`, keyed by `InputCategory` symbol  |
-| `user_descriptors`            | Parsed `user_descriptors.yaml` (keyed by uppercased symbol) |
-| `descriptors`                 | Parsed default `power_system_inputs.json`                   |
-| `generator_mapping`           | `Dict{NamedTuple, String}` from `(fuel, type)` to subtype   |
-| `timeseries_metadata_file`    | Absolute path to pointer file, or `nothing`                 |
-| `directory`                   | Original input directory (used to resolve relative paths)   |
+| Field                      | What it holds                                               |
+|:-------------------------- |:----------------------------------------------------------- |
+| `base_power`               | System base MVA (defaults to 100.0 if not provided)         |
+| `category_to_df`           | `Dict{Symbol, DataFrame}`, keyed by `InputCategory` symbol  |
+| `user_descriptors`         | Parsed `user_descriptors.yaml` (keyed by uppercased symbol) |
+| `descriptors`              | Parsed default `power_system_inputs.json`                   |
+| `generator_mapping`        | `Dict{NamedTuple, String}` from `(fuel, type)` to subtype   |
+| `timeseries_metadata_file` | Absolute path to pointer file, or `nothing`                 |
+| `directory`                | Original input directory (used to resolve relative paths)   |
 
 Nothing in this object depends on `PowerSystems.jl`; the handoff happens only
 when you pass `data` to `PowerSystems.System(data; ...)`, which iterates the

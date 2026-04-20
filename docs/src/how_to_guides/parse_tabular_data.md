@@ -75,7 +75,7 @@ Components for each category must be defined in their own CSV file. The
 following categories are currently supported:
 
   - `bus.csv` (**required**)
-
+    
       + Columns named `area` and `zone` create a corresponding set of `Area`
         and `LoadZone` objects.
       + Columns named `max_active_power` or `max_reactive_power` create
@@ -201,7 +201,7 @@ See
 for a worked example.
 
 !!! note "Time-series storage"
-
+    
     By default `PowerSystems.jl` stores time-series data in HDF5 files and
     reads them on demand. Pass `time_series_in_memory = true` to `System`
     when your data fits in memory; pass `time_series_directory = X` to point
@@ -222,7 +222,7 @@ whatever the user happens to call their column.
  1. Add an entry to the array of parameters for your category in
     [`src/power_system_inputs.json`](https://github.com/NLR-Sienna/PowerTableDataParser.jl/blob/main/src/power_system_inputs.json)
     following these rules:
-
+    
      1. Use `snake_case` for `name`.
      2. `name` and `description` are required.
      3. Prefer a name that is generic and not dataset-specific.
@@ -233,7 +233,6 @@ whatever the user happens to call their column.
  2. If you maintain widely-used user descriptor files (e.g. the RTS-GMLC
     SIIP config), update them and submit pull requests so downstream users
     pick up the new field.
-
  3. Consume the new column in your parsing code like this:
 
 ```julia
@@ -249,7 +248,7 @@ defined in `power_system_inputs.json`, already translated from the user's
 column names and unit conventions.
 
 !!! warning "Deprecation"
-
+    
     The tabular parser is in long-term maintenance mode. `PowerSystems.jl`
     will eventually move to a database-backed data layer, and new datasets
     are encouraged to ship a small custom Julia importer rather than depend
