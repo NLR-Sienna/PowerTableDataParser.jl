@@ -14,6 +14,9 @@ SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
+[sources]
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "IS4"}
+
 [compat]
 CSV = "~0.10"
 DataFrames = "1"
