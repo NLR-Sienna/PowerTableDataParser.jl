@@ -1,17 +1,12 @@
 using Test
 using Logging
-using DataStructures
-using Dates
-using LinearAlgebra
-using PowerSystems
-using PowerSystemCaseBuilder
 using PowerTableDataParser
 import InfrastructureSystems
+import DataFrames
+import YAML
 
 const IS = InfrastructureSystems
 const PDP = PowerTableDataParser
-const PSB = PowerSystemCaseBuilder
-const PSY = PowerSystems
 
 import Aqua
 Aqua.test_unbound_args(PowerTableDataParser)
@@ -20,13 +15,7 @@ Aqua.test_ambiguities(PowerTableDataParser)
 Aqua.test_stale_deps(PowerTableDataParser)
 Aqua.test_deps_compat(PowerTableDataParser)
 
-const DATA_DIR = PSB.DATA_DIR
-const BAD_DATA = joinpath(DATA_DIR, "bad_data_for_tests")
-const RTS_GMLC_DIR = joinpath(DATA_DIR, "RTS_GMLC")
-const DESCRIPTORS = joinpath(RTS_GMLC_DIR, "user_descriptors.yaml")
-
-include("common.jl")
-include("rts_loading_utils.jl")
+include("loading_utils.jl")
 
 LOG_FILE = "table-parser-test.log"
 LOG_LEVELS = Dict(
