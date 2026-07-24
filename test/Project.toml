@@ -12,5 +12,8 @@ PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[sources]
+InfrastructureSystems = {url = "https://github.com/NREL-Sienna/InfrastructureSystems.jl", rev = "feat/rust-time-series-store"}
+
 [compat]
 julia = "^1.6"
