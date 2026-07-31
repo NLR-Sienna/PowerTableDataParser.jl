@@ -49,6 +49,22 @@ julia --project=test -e 'using Pkg; Pkg.instantiate()'
 
 ## Available Scripts
 
+### `export_system_json.jl`
+
+Exports system data to JSON in both SI and natural gas unit systems for manual verification.
+
+**Usage:**
+```bash
+julia --project=. scripts/export_system_json.jl [output_dir]
+```
+
+**Output:**
+- `system_si_units.json` — System serialized in SI units
+- `system_natural_gas_units.json` — System serialized in natural gas units
+- `export_metadata.json` — Export metadata and system statistics
+
+**Purpose:** Provides complete system representation for manual inspection, validation, and comparison between unit systems. Useful for verifying schema compliance and data correctness.
+
 ### `build_psy5_reference.jl`
 
 Builds reference data from PSY5 (PowerSystems.jl v5) for comparison and validation.
