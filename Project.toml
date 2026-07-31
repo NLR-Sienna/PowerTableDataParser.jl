@@ -9,13 +9,22 @@ DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 InfrastructureSystems = "2cd47ed4-ca9b-11e9-27f2-ab636a7671f1"
-JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+OpenAPI = "d5e62ea6-ddf3-4d43-8e4c-ad5e6c8bfd7d"
+PowerCoreOpenAPIModels = "b7b40286-e793-417d-a9a0-b1583e4da1cb"
+PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [sources]
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "IS4"}
+# Sibling-checkout paths, not a git rev: the x-unit accessors these packages
+# expose are generated and not yet released. Switch to a tagged rev before merge.
+PowerCoreOpenAPIModels = {path = "../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
+PowerOperationsOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
 
 [compat]
 CSV = "~0.10"
@@ -23,8 +32,13 @@ DataFrames = "1"
 Dates = "1"
 DocStringExtensions = "0.8, 0.9.2"
 InfrastructureSystems = "^3.2"
-JSON3 = "1"
+JSON = "1"
+OpenAPI = "0.2"
+PowerCoreOpenAPIModels = "0.1"
+PowerOperationsOpenAPIModels = "0.1"
 SQLite = "^1.6"
+TimeZones = "1"
+UUIDs = "1"
 Unicode = "1"
 YAML = "~0.4"
 julia = "^1.10"
