@@ -1,17 +1,17 @@
 using Test
 using Logging
-using DataStructures
 using Dates
-using LinearAlgebra
-using PowerSystems
-using PowerSystemCaseBuilder
 using PowerTableDataParser
 import InfrastructureSystems
+import DataFrames
+import LazyArtifacts
+import HDF5
+import JSON
+import OpenAPI
+import TimeZones
 
 const IS = InfrastructureSystems
 const PDP = PowerTableDataParser
-const PSB = PowerSystemCaseBuilder
-const PSY = PowerSystems
 
 import Aqua
 Aqua.test_unbound_args(PowerTableDataParser)
@@ -20,12 +20,14 @@ Aqua.test_ambiguities(PowerTableDataParser)
 Aqua.test_stale_deps(PowerTableDataParser)
 Aqua.test_deps_compat(PowerTableDataParser)
 
-const DATA_DIR = PSB.DATA_DIR
+const DATA_DIR =
+    joinpath(LazyArtifacts.artifact"CaseData", "PowerSystemsTestData-5.0-dev3")
 const BAD_DATA = joinpath(DATA_DIR, "bad_data_for_tests")
 const RTS_GMLC_DIR = joinpath(DATA_DIR, "RTS_GMLC")
-const DESCRIPTORS = joinpath(RTS_GMLC_DIR, "user_descriptors.yaml")
+# PTDP ships its own copy: the fixture's descriptor points base_mva at
+# MATPOWER BaseMVA, which is 100.0 for every generator.
+const DESCRIPTORS = joinpath(@__DIR__, "descriptors", "rts_user_descriptors.yaml")
 
-include("common.jl")
 include("rts_loading_utils.jl")
 
 LOG_FILE = "table-parser-test.log"

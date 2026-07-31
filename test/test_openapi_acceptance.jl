@@ -1,0 +1,102 @@
+@testset "RTS-GMLC acceptance" begin
+    data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
+    sys = PDP.build_openapi_system(data)
+
+    @testset "component counts" begin
+        @test length(PDP.get_components(sys, "ACBus")) == 73
+        @test length(PDP.get_components(sys, "Area")) == 3
+        @test length(PDP.get_components(sys, "LoadZone")) == 3
+        @test length(PDP.get_components(sys, "Arc")) == 109
+        @test length(PDP.get_components(sys, "Line")) == 105
+        @test length(PDP.get_components(sys, "TwoWindingTransformer")) == 15
+        @test length(PDP.get_components(sys, "TransformerCircuit")) == 15
+        @test length(PDP.get_components(sys, "TwoTerminalGenericHVDCLine")) == 1
+        @test length(PDP.get_components(sys, "ThermalStandard")) == 73
+        @test length(PDP.get_components(sys, "HydroTurbine")) == 19
+        @test length(PDP.get_components(sys, "HydroDispatch")) == 1
+        @test length(PDP.get_components(sys, "RenewableNonDispatch")) == 31
+        @test length(PDP.get_components(sys, "SynchronousCondenser")) == 3
+        @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
+        @test length(PDP.get_components(sys, "PowerLoad")) == 51
+        @test length(PDP.get_components(sys, "VariableReserve")) == 7
+        @test length(sys.time_series_associations) == 362
+        @test length(sys.time_series) == 260
+    end
+
+    @testset "referential integrity" begin
+        ids = Set{Int}()
+        for type_name in PDP.component_type_names(sys)
+            union!(
+                ids,
+                Set(PDP.get_value(c, :id) for c in PDP.get_components(sys, type_name)),
+            )
+        end
+        arc_ids = Set(PDP.get_value(a, :id) for a in PDP.get_components(sys, "Arc"))
+        bus_ids = Set(PDP.get_value(b, :id) for b in PDP.get_components(sys, "ACBus"))
+
+        for bus in PDP.get_components(sys, "ACBus")
+            @test PDP.get_value(bus, :area) in ids
+            @test PDP.get_value(bus, :load_zone) in ids
+        end
+        for line in PDP.get_components(sys, "Line")
+            @test PDP.get_value(line, :arc) in arc_ids
+        end
+        for gen in PDP.get_components(sys, "ThermalStandard")
+            @test PDP.get_value(gen, :bus) in bus_ids
+        end
+        for association in sys.time_series_associations
+            @test PDP.get_value(association, :owner_id) in ids
+        end
+    end
+
+    @testset "required properties are populated" begin
+        for type_name in PDP.component_type_names(sys)
+            for component in PDP.get_components(sys, type_name)
+                @test OpenAPI.check_required(component)
+            end
+        end
+        for association in sys.time_series_associations
+            @test OpenAPI.check_required(association)
+        end
+    end
+
+    @testset "both files, both resolutions" begin
+        mktempdir() do dir
+            path = joinpath(dir, "rts.json")
+            PDP.to_json(sys, path; pretty = true)
+            h5 = joinpath(dir, "rts_time_series_storage.h5")
+            @test isfile(path)
+            @test isfile(h5)
+            uuids = Set(
+                PDP.get_value(a, :time_series_uuid) for a in sys.time_series_associations
+            )
+            HDF5.h5open(h5, "r") do f
+                @test length(keys(f["time_series"])) == length(uuids)
+            end
+            resolutions = Set(
+                PDP.get_value(a, :resolution) for a in sys.time_series_associations
+            )
+            @test resolutions == Set(["PT3600S", "PT300S"])
+        end
+    end
+
+    @testset "the tables' other data is carried, not dropped" begin
+        # Emissions, forced outages and bus positions, none of which reach a
+        # PowerSystems System from table data today.
+        @test length(PDP.get_supplemental_attributes(sys, "EmissionsData")) == 336
+        @test length(
+            PDP.get_supplemental_attributes(sys, "GeometricDistributionForcedOutage"),
+        ) == 214
+        @test length(PDP.get_supplemental_attributes(sys, "GeographicInfo")) == 73
+        @test length(sys.supplemental_attribute_associations) == 623
+        # Columns with no field at all are kept against their component.
+        @test length(sys.ext) == 352
+    end
+
+    @testset "known omissions are asserted, not silent" begin
+        # Reserve-to-device contribution is many-to-many with no SiennaSchemas
+        # representation (design D5), so it is deliberately not emitted.
+        reserve = first(PDP.get_components(sys, "VariableReserve"))
+        @test !hasproperty(reserve, :contributing_devices)
+    end
+end
