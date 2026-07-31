@@ -18,6 +18,8 @@ IS.@scoped_enum(
 
 const ENUMS = (
     InputCategory,
+    # _get_field_infos resolves the descriptors' unit_system strings through this.
+    IS.UnitSystem,
 )
 
 const ENUM_MAPPINGS = Dict()
