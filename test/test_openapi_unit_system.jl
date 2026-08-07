@@ -116,6 +116,6 @@ end
         @test [PDP.get_value(c, :id) for c in left] ==
               [PDP.get_value(c, :id) for c in right]
     end
-    @test length(natural.time_series_associations) ==
-          length(per_unit.time_series_associations)
+    @test length(PDP.get_document(natural).time_series_associations) ==
+          length(PDP.get_document(per_unit).time_series_associations)
 end

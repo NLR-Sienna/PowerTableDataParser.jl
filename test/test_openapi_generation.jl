@@ -69,7 +69,8 @@ end
 @testset "thermal generators carry cost and limits" begin
     sys, _ = _generation()
     gen = first(PDP.get_components(sys, "ThermalStandard"))
-    @test PDP.get_value(gen, :operation_cost).cost_type == "THERMAL"
+    # operation_cost is a oneOf, so assignment wraps the cost in ThermalStandardOperationCost.
+    @test PDP.get_value(gen, :operation_cost).value.cost_type == "THERMAL"
     limits = PDP.get_value(gen, :active_power_limits)
     @test limits.max >= limits.min
     @test PDP.get_value(gen, :base_power) > 0

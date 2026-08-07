@@ -9,18 +9,23 @@ Ids come from a single counter shared by every type, matching GridDB's `entities
 table where an id identifies a component without also needing its type. This is
 why a bus number cannot double as an id.
 
-Not serialized: every field is recoverable from the emitted document.
+The counter itself lives on `document`: `PC.SystemDocument` owns id allocation
+for the document it produces, so this registry delegates every id it hands out
+rather than keeping a second counter that could drift from the document's.
+
+Not serialized: every field but `document` is recoverable from the emitted
+document, and `document` is serialized on its own terms.
 """
 struct IdRegistry
-    counter::Base.RefValue{Int}
+    document::PC.SystemDocument
     by_name::Dict{Tuple{String, String}, Int}
     by_bus_number::Dict{Int, Int}
     arcs::Dict{Tuple{Int, Int}, Int}
 end
 
-function IdRegistry()
+function IdRegistry(document::PC.SystemDocument)
     return IdRegistry(
-        Ref(0),
+        document,
         Dict{Tuple{String, String}, Int}(),
         Dict{Int, Int}(),
         Dict{Tuple{Int, Int}, Int}(),
@@ -30,8 +35,7 @@ end
 """Allocate an id without associating it with a name. For types the schemas give
 no `name` field, such as `TransformerCircuit`."""
 function next_id!(reg::IdRegistry)
-    reg.counter[] += 1
-    return reg.counter[]
+    return PC.next_id!(reg.document)
 end
 
 """Allocate an id for `name` within `type_name`. Throws if that pair is taken."""

@@ -1,30 +1,24 @@
-# The attribute-to-entity link is a generated Core type. It was hand-written here
-# while SiennaSchemas had no schema for it; the schema now exists, so both this
-# parser and the power-flow-file path emit the same record.
-
 """
-The document PTDP emits: components grouped by type, the association tables, and
-the time series destined for the HDF5 sidecar.
+The document PTDP emits, as a thin wrapper composing the canonical
+`PC.SystemDocument` rather than duplicating its state.
 
-`components` values are concrete `Vector{T}`, so per-type iteration stays
-inferable behind a function barrier even though the field is untyped.
+`document` is the ONLY serialized artifact: components, the association tables,
+`ext` and the unit convention all live on it, reached through PC's own API
+(`PC.add_component!`, `PC.get_components`, ...) so this wrapper does not
+re-implement what the document already owns.
 
-`registry` is build-time scaffolding and is not serialized: every id it holds is
-recoverable from the emitted components.
+`registry` is build-time scaffolding and is not serialized: it delegates id
+allocation to `document` (see `IdRegistry`) and keeps only the lookup indices
+(by name, by bus number, by arc) that the document has no use for once built.
 
-`unit_system` records which convention the stored values follow. It is set once at
-construction and read by the parsers, so a system cannot hold a mixture.
+`time_series` is the IS time-series payload this package writes to its own HDF5
+sidecar; `document` carries only the `TimeSeriesAssociation` metadata rows
+pointing at it, not the values themselves.
 """
 struct OpenAPISystem
-    base_power::Float64
-    unit_system::String
-    components::Dict{String, Vector}
-    supplemental_attributes::Vector{OpenAPI.APIModel}
-    supplemental_attribute_associations::Vector{PC.SupplementalAttributeAssociation}
-    time_series_associations::Vector{PC.TimeSeriesAssociation}
-    time_series::Vector{IS.TimeSeriesData}
-    ext::Dict{Int, Dict{String, Any}}
+    document::PC.SystemDocument
     registry::IdRegistry
+    time_series::Vector{IS.TimeSeriesData}
 end
 
 """
@@ -47,18 +41,11 @@ function OpenAPISystem(
             ),
         )
     end
-    return OpenAPISystem(
-        base_power,
-        String(unit_system),
-        Dict{String, Vector}(),
-        Vector{OpenAPI.APIModel}(),
-        Vector{PC.SupplementalAttributeAssociation}(),
-        Vector{PC.TimeSeriesAssociation}(),
-        Vector{IS.TimeSeriesData}(),
-        Dict{Int, Dict{String, Any}}(),
-        IdRegistry(),
-    )
+    document = PC.SystemDocument(base_power; unit_system = unit_system)
+    return OpenAPISystem(document, IdRegistry(document), Vector{IS.TimeSeriesData}())
 end
+
+get_document(sys::OpenAPISystem) = sys.document
 
 """
 Record the table columns the data model has no field for, against a component.
@@ -67,20 +54,16 @@ Kept beside the components rather than inside them: the schemas describe what a
 component is, and this is whatever else the source table happened to state.
 """
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
-    if isempty(extras)
-        return
-    end
-    sys.ext[component_id] = extras
+    PC.set_ext!(get_document(sys), component_id, extras)
     return
 end
 
-get_ext(sys::OpenAPISystem, component_id::Int) =
-    get(sys.ext, component_id, Dict{String, Any}())
+get_ext(sys::OpenAPISystem, component_id::Int) = PC.get_ext(get_document(sys), component_id)
 
-get_base_power(sys::OpenAPISystem) = sys.base_power
+get_base_power(sys::OpenAPISystem) = PC.get_base_power(get_document(sys))
 get_registry(sys::OpenAPISystem) = sys.registry
 
-get_unit_system(sys::OpenAPISystem) = sys.unit_system
+get_unit_system(sys::OpenAPISystem) = PC.get_unit_system(get_document(sys))
 
 """
 Whether values are stored per unit rather than in the schemas' natural units.
@@ -92,13 +75,10 @@ per-unit document is for comparison against PowerSystems rather than for a
 consumer that reads the annotations — which is why the document states the
 convention it was written in.
 """
-uses_per_unit(sys::OpenAPISystem) = sys.unit_system == "DEVICE_BASE"
+uses_per_unit(sys::OpenAPISystem) = PC.uses_per_unit(get_document(sys))
 
 function add_component!(sys::OpenAPISystem, component::T) where {T <: OpenAPI.APIModel}
-    bucket = get!(sys.components, string(nameof(T))) do
-        return Vector{T}()
-    end
-    push!(bucket, component)
+    PC.add_component!(get_document(sys), component)
     return
 end
 
@@ -106,22 +86,18 @@ end
 Record a supplemental attribute and the entity it describes.
 
 Attributes are held in one list rather than bucketed by type: nothing iterates
-them per type, and the association carries the link a consumer needs.
+them per type, and the association carries the link a consumer needs. Neither
+`group_index` nor `role` applies to anything this parser emits — it has no
+plant-family attributes and reserve membership goes through
+`add_service_association!` below, not this function — so it always calls
+`PC.add_supplemental_attribute!` with both left at their `nothing` default.
 """
 function add_supplemental_attribute!(
     sys::OpenAPISystem,
     attribute::OpenAPI.APIModel,
     entity_id::Int,
 )
-    push!(sys.supplemental_attributes, attribute)
-    push!(
-        sys.supplemental_attribute_associations,
-        PC.SupplementalAttributeAssociation(;
-            attribute_id = get_value(attribute, :id),
-            entity_id = entity_id,
-            attribute_type = string(nameof(typeof(attribute))),
-        ),
-    )
+    PC.add_supplemental_attribute!(get_document(sys), attribute, entity_id)
     return
 end
 
@@ -134,6 +110,11 @@ table as every other attribute link (D10): `service_id` is emitted as `attribute
 from a plain attribute by looking `attribute_id` up as a component rather than by any field
 here. Neither `group_index` nor `role` applies to a membership row.
 
+There is no `service_id` model object to hand `PC.add_supplemental_attribute!` — the
+"attribute" here is a component that already exists — so this appends the association
+row directly, which `PC.validate_document` already accounts for (it checks `attribute_id`
+against components and attributes together for exactly this reason).
+
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
 device can match one reserve twice, and silently collapsing that would hide a malformed
@@ -145,7 +126,8 @@ function add_service_association!(
     entity_id::Int,
     attribute_type::AbstractString,
 )
-    for existing in sys.supplemental_attribute_associations
+    associations = get_document(sys).supplemental_attribute_associations
+    for existing in associations
         if get_value(existing, :attribute_id) == service_id &&
            get_value(existing, :entity_id) == entity_id
             throw(
@@ -156,7 +138,7 @@ function add_service_association!(
         end
     end
     push!(
-        sys.supplemental_attribute_associations,
+        associations,
         PC.SupplementalAttributeAssociation(;
             attribute_id = service_id,
             entity_id = entity_id,
@@ -168,15 +150,12 @@ end
 
 """Attributes of one type, in the order they were added."""
 function get_supplemental_attributes(sys::OpenAPISystem, type_name::AbstractString)
-    return [
-        a for a in sys.supplemental_attributes if
-        string(nameof(typeof(a))) == String(type_name)
-    ]
+    return PC.get_supplemental_attributes(get_document(sys), type_name)
 end
 
 function get_components(sys::OpenAPISystem, type_name::AbstractString)
-    return get(sys.components, String(type_name), Vector{OpenAPI.APIModel}())
+    return PC.get_components(get_document(sys), type_name)
 end
 
 """Type names in sorted order, so serialized output is deterministic."""
-component_type_names(sys::OpenAPISystem) = sort!(collect(keys(sys.components)))
+component_type_names(sys::OpenAPISystem) = PC.component_type_names(get_document(sys))

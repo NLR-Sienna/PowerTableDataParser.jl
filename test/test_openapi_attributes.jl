@@ -53,7 +53,8 @@ end
 
     reg = PDP.get_registry(sys)
     by_entity = Dict(
-        a.entity_id => a.attribute_id for a in sys.supplemental_attribute_associations
+        a.entity_id => a.attribute_id for
+        a in PDP.get_document(sys).supplemental_attribute_associations
     )
     attributes = Dict(PDP.get_value(o, :id) => o for o in outages)
 
@@ -92,7 +93,8 @@ end
     for type_name in PDP.component_type_names(sys)
         union!(ids, Set(PDP.get_value(c, :id) for c in PDP.get_components(sys, type_name)))
     end
-    attribute_ids = Set(PDP.get_value(a, :id) for a in sys.supplemental_attributes)
+    attribute_ids =
+        Set(PDP.get_value(a, :id) for a in PDP.get_document(sys).supplemental_attributes)
     # Attribute ids come from the same counter as components, so they never collide.
     @test isempty(intersect(ids, attribute_ids))
 
@@ -101,17 +103,17 @@ end
     # against one id space or the other, never neither.
     attribute_rows = filter(
         a -> PDP.get_value(a, :attribute_id) in attribute_ids,
-        sys.supplemental_attribute_associations,
+        PDP.get_document(sys).supplemental_attribute_associations,
     )
     service_rows = filter(
         a -> PDP.get_value(a, :attribute_id) in ids,
-        sys.supplemental_attribute_associations,
+        PDP.get_document(sys).supplemental_attribute_associations,
     )
-    @test length(attribute_rows) == length(sys.supplemental_attributes)
+    @test length(attribute_rows) == length(PDP.get_document(sys).supplemental_attributes)
     @test length(attribute_rows) + length(service_rows) ==
-          length(sys.supplemental_attribute_associations)
+          length(PDP.get_document(sys).supplemental_attribute_associations)
 
-    for association in sys.supplemental_attribute_associations
+    for association in PDP.get_document(sys).supplemental_attribute_associations
         entity_id = PDP.get_value(association, :entity_id)
         attribute_id = PDP.get_value(association, :attribute_id)
         @test entity_id in ids
@@ -151,7 +153,7 @@ end
         path = joinpath(dir, "rts.json")
         PDP.to_json(sys, path)
         doc = JSON.parse(read(path, String))
-        @test length(doc["ext"]) == length(sys.ext)
+        @test length(doc["ext"]) == length(PDP.get_document(sys).ext)
         line_id = PDP.get_id(reg, "Line", "A1")
         @test doc["ext"][string(line_id)]["Length"] ≈ 3.0
         @test length(doc["supplemental_attributes"]) == 623

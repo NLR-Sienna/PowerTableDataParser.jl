@@ -13,9 +13,10 @@ end
 @testset "one association per owner, both resolutions kept" begin
     sys = _built()
     # 260 pointer entries, of which the 6 zone load series fan out to the loads.
-    @test length(sys.time_series_associations) == 362
+    @test length(PDP.get_document(sys).time_series_associations) == 362
     resolutions = Set(
-        PDP.get_value(a, :resolution) for a in sys.time_series_associations
+        PDP.get_value(a, :resolution) for
+        a in PDP.get_document(sys).time_series_associations
     )
     @test resolutions == Set(["PT3600S", "PT300S"])
     @test length(sys.time_series) == 260
@@ -24,7 +25,7 @@ end
 @testset "a zone's load series fans out to the loads under it" begin
     sys = _built()
     loads = [
-        a for a in sys.time_series_associations if
+        a for a in PDP.get_document(sys).time_series_associations if
         PDP.get_value(a, :owner_type) == "PowerLoad"
     ]
     # 51 loads at each of the two resolutions.
@@ -35,7 +36,7 @@ end
     )
 
     zones = [
-        a for a in sys.time_series_associations if
+        a for a in PDP.get_document(sys).time_series_associations if
         PDP.get_value(a, :owner_type) == "LoadZone"
     ]
     @test length(zones) == 6
@@ -73,9 +74,10 @@ end
     )
     zone_by_uuid = Dict(
         PDP.get_value(a, :time_series_uuid) => PDP.get_value(a, :owner_id) for
-        a in sys.time_series_associations if PDP.get_value(a, :owner_type) == "LoadZone"
+        a in PDP.get_document(sys).time_series_associations if
+        PDP.get_value(a, :owner_type) == "LoadZone"
     )
-    for association in sys.time_series_associations
+    for association in PDP.get_document(sys).time_series_associations
         if PDP.get_value(association, :owner_type) != "PowerLoad"
             continue
         end
@@ -93,7 +95,7 @@ end
             Set(PDP.get_value(c, :id) for c in PDP.get_components(sys, type_name)),
         )
     end
-    for association in sys.time_series_associations
+    for association in PDP.get_document(sys).time_series_associations
         @test PDP.get_value(association, :owner_id) in ids
         @test PDP.get_value(association, :owner_category) == "Component"
         @test !isempty(PDP.get_value(association, :time_series_uuid))
@@ -106,7 +108,7 @@ end
     sys = _built()
     zone_ids = Set(PDP.get_value(z, :id) for z in PDP.get_components(sys, "LoadZone"))
     zone_assocs = [
-        a for a in sys.time_series_associations if
+        a for a in PDP.get_document(sys).time_series_associations if
         PDP.get_value(a, :owner_type) == "LoadZone"
     ]
     @test length(zone_assocs) == 6
@@ -118,7 +120,7 @@ end
 @testset "reserve requirements are associated with the reserve" begin
     sys = _built()
     reserve_assocs = [
-        a for a in sys.time_series_associations if
+        a for a in PDP.get_document(sys).time_series_associations if
         PDP.get_value(a, :owner_type) == "OnlineReserve"
     ]
     @test length(reserve_assocs) == 12
@@ -127,7 +129,7 @@ end
 
 @testset "the initial timestamp is stated in UTC" begin
     sys = _built()
-    association = first(sys.time_series_associations)
+    association = first(PDP.get_document(sys).time_series_associations)
     timestamp = PDP.get_value(association, :initial_timestamp)
     @test TimeZones.timezone(timestamp) == TimeZones.tz"UTC"
 end
@@ -138,7 +140,8 @@ end
         path = joinpath(dir, "ts.h5")
         PDP.write_time_series(sys, path)
         uuids = Set(
-            PDP.get_value(a, :time_series_uuid) for a in sys.time_series_associations
+            PDP.get_value(a, :time_series_uuid) for
+            a in PDP.get_document(sys).time_series_associations
         )
         HDF5.h5open(path, "r") do f
             @test length(keys(f["time_series"])) == length(uuids)

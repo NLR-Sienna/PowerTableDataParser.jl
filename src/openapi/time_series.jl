@@ -242,7 +242,11 @@ function _add_association!(
     multiplier,
 )
     association = PC.TimeSeriesAssociation()
-    set_value!(association, :id, length(sys.time_series_associations) + 1)
+    set_value!(
+        association,
+        :id,
+        length(get_document(sys).time_series_associations) + 1,
+    )
     set_value!(association, :time_series_uuid, string(IS.get_uuid(series)))
     set_value!(association, :time_series_type, "SingleTimeSeries")
     set_value!(
@@ -259,7 +263,7 @@ function _add_association!(
     set_value!(association, :features, Dict{String, PC.FeatureValue}[])
     _scaling_factor_multiplier!(association, multiplier)
     set_value!(association, :metadata_uuid, string(UUIDs.uuid4()))
-    push!(sys.time_series_associations, association)
+    PC.add_time_series_association!(get_document(sys), association)
     return
 end
 

@@ -41,34 +41,61 @@ function get_generator_type(fuel, unit_type, mappings::Dict{NamedTuple, String})
     )
 end
 
+"""
+PC's vocabulary spelling for a unit name this function recognizes, when it differs from the
+one PTDP's own descriptors use.
+
+`power_system_inputs.json` and the user descriptors spell these in full words
+(`"degree"`, `"radian"`) while `PC.UNIT_VOCABULARY` keeps the same quantity abbreviated
+(`"deg"`, `"rad"`); this translates PTDP's spelling onto PC's without touching the
+descriptor files, which name units in the vocabulary's own spelling everywhere else
+(`"GW"`, `"GWh"`, ...).
+"""
+const _PC_UNIT_ALIASES = Dict("degree" => "deg", "radian" => "rad")
+_pc_unit(name::AbstractString) = get(_PC_UNIT_ALIASES, name, name)
+
+"""Scale `value` by the ratio PC's vocabulary states between two units of `quantity`."""
+function _pc_scale(
+    value::Float64,
+    quantity::AbstractString,
+    from::AbstractString,
+    to::AbstractString,
+)
+    return value * PC.conversion_factor(quantity, _pc_unit(from)) /
+           PC.conversion_factor(quantity, _pc_unit(to))
+end
+
+# hour/minute/second are deliberately absent from UNIT_VOCABULARY (the schemas' time-tier
+# design keeps a field to one declared unit rather than letting every duration quantity carry
+# every tier), so those three conversions stay hand-rolled below rather than routed through PC.
 function convert_units!(
     value::Float64,
     unit_conversion::NamedTuple{(:From, :To), Tuple{String, String}},
 )
     if string_compare(unit_conversion.From, "degree") &&
        string_compare(unit_conversion.To, "radian")
-        value = deg2rad(value)
+        value = _pc_scale(value, "Angle", "degree", "radian")
     elseif string_compare(unit_conversion.From, "radian") &&
            string_compare(unit_conversion.To, "degree")
-        value = rad2deg(value)
+        value = _pc_scale(value, "Angle", "radian", "degree")
     elseif string_compare(unit_conversion.From, "TW") &&
            string_compare(unit_conversion.To, "MW")
-        value *= 1e6
+        value = _pc_scale(value, "ActivePower", "TW", "MW")
     elseif string_compare(unit_conversion.From, "TWh") &&
            string_compare(unit_conversion.To, "MWh")
-        value *= 1e6
+        value = _pc_scale(value, "ElectricalEnergy", "TWh", "MWh")
     elseif string_compare(unit_conversion.From, "GW") &&
            string_compare(unit_conversion.To, "MW")
-        value *= 1000
+        value = _pc_scale(value, "ActivePower", "GW", "MW")
     elseif string_compare(unit_conversion.From, "GWh") &&
            string_compare(unit_conversion.To, "MWh")
-        value *= 1000
+        value = _pc_scale(value, "ElectricalEnergy", "GWh", "MWh")
     elseif string_compare(unit_conversion.From, "kW") &&
            string_compare(unit_conversion.To, "MW")
-        value /= 1000
+        value = _pc_scale(value, "ActivePower", "kW", "MW")
     elseif string_compare(unit_conversion.From, "kWh") &&
            string_compare(unit_conversion.To, "MWh")
-        value /= 1000
+        value = _pc_scale(value, "ElectricalEnergy", "kWh", "MWh")
     elseif string_compare(unit_conversion.From, "hour") &&
            string_compare(unit_conversion.To, "second")
         value *= 3600

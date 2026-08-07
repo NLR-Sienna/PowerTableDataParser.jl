@@ -19,7 +19,7 @@
         @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
         @test length(PDP.get_components(sys, "PowerLoad")) == 51
         @test length(PDP.get_components(sys, "OnlineReserve")) == 7
-        @test length(sys.time_series_associations) == 362
+        @test length(PDP.get_document(sys).time_series_associations) == 362
         @test length(sys.time_series) == 260
     end
 
@@ -44,7 +44,7 @@
         for gen in PDP.get_components(sys, "ThermalStandard")
             @test PDP.get_value(gen, :bus) in bus_ids
         end
-        for association in sys.time_series_associations
+        for association in PDP.get_document(sys).time_series_associations
             @test PDP.get_value(association, :owner_id) in ids
         end
     end
@@ -55,7 +55,7 @@
                 @test OpenAPI.check_required(component)
             end
         end
-        for association in sys.time_series_associations
+        for association in PDP.get_document(sys).time_series_associations
             @test OpenAPI.check_required(association)
         end
     end
@@ -68,13 +68,15 @@
             @test isfile(path)
             @test isfile(h5)
             uuids = Set(
-                PDP.get_value(a, :time_series_uuid) for a in sys.time_series_associations
+                PDP.get_value(a, :time_series_uuid) for
+                a in PDP.get_document(sys).time_series_associations
             )
             HDF5.h5open(h5, "r") do f
                 @test length(keys(f["time_series"])) == length(uuids)
             end
             resolutions = Set(
-                PDP.get_value(a, :resolution) for a in sys.time_series_associations
+                PDP.get_value(a, :resolution) for
+                a in PDP.get_document(sys).time_series_associations
             )
             @test resolutions == Set(["PT3600S", "PT300S"])
         end
@@ -94,10 +96,37 @@
             Set(["EmissionsData", "GeometricDistributionForcedOutage", "GeographicInfo"])
         @test count(
             row -> PDP.get_value(row, :attribute_type) in plain_attribute_types,
-            sys.supplemental_attribute_associations,
+            PDP.get_document(sys).supplemental_attribute_associations,
         ) == 623
         # Columns with no field at all are kept against their component.
-        @test length(sys.ext) == 352
+        @test length(PDP.get_document(sys).ext) == 352
+    end
+
+    @testset "ext survives emission, not just the in-memory container" begin
+        # R2: serialize.jl used to hardcode "ext" => Dict{String,Any}() on write, silently
+        # dropping every extra column. This checks the EMITTED document, not sys, so that
+        # drop can never come back unnoticed.
+        reg = PDP.get_registry(sys)
+        mktempdir() do dir
+            path = joinpath(dir, "rts.json")
+            PDP.to_json(sys, path)
+            doc = JSON.parse(read(path, String))
+            @test length(doc["ext"]) == 352
+            line_id = PDP.get_id(reg, "Line", "A1")
+            @test doc["ext"][string(line_id)]["Length"] ≈ 3.0
+        end
+    end
+
+    @testset "the emitted document round trips through PC" begin
+        reg = PDP.get_registry(sys)
+        mktempdir() do dir
+            path = joinpath(dir, "rts.json")
+            PDP.to_json(sys, path; pretty = true)
+            read_back = PDP.PC.read_document(path)
+            PDP.PC.validate_document(read_back)
+            @test PDP.PC.component_type_names(read_back) == PDP.component_type_names(sys)
+            @test length(PDP.PC.get_ext(read_back, PDP.get_id(reg, "Line", "A1"))) > 0
+        end
     end
 
     @testset "reserve membership is rows, not a component property" begin
@@ -108,7 +137,7 @@
         @test !hasproperty(reserve, :contributing_devices)
         service_rows = count(
             row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
-            sys.supplemental_attribute_associations,
+            PDP.get_document(sys).supplemental_attribute_associations,
         )
         @test service_rows == 510
     end
