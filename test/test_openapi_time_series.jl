@@ -119,7 +119,7 @@ end
     sys = _built()
     reserve_assocs = [
         a for a in sys.time_series_associations if
-        PDP.get_value(a, :owner_type) == "VariableReserve"
+        PDP.get_value(a, :owner_type) == "OnlineReserve"
     ]
     @test length(reserve_assocs) == 12
     @test all(a -> PDP.get_value(a, :name) == "requirement", reserve_assocs)

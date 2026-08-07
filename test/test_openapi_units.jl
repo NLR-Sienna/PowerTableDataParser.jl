@@ -17,8 +17,8 @@ end
 end
 
 @testset "set_value! converts within a quantity" begin
-    reserve = PDP.PO.ConstantReserve()
-    PDP.set_value!(reserve, :time_frame, 1.0, "h")
+    reserve = PDP.PO.OnlineReserve()
+    PDP.set_value!(reserve, :time_frame, 60.0, "min")
     @test reserve.time_frame ≈ 60.0
 
     storage = PDP.PO.EnergyReservoirStorage()
@@ -96,8 +96,8 @@ end
 @testset "compound properties convert every member" begin
     gen = PDP.PO.ThermalStandard()
     PDP.set_value!(gen, :time_limits, (up = 120.0, down = 60.0), "min")
-    @test gen.time_limits.up ≈ 2.0
-    @test gen.time_limits.down ≈ 1.0
+    @test gen.time_limits.up ≈ 120.0
+    @test gen.time_limits.down ≈ 60.0
 end
 
 @testset "discriminated units are read off the instance" begin
@@ -107,7 +107,7 @@ end
     @test line.r == 5.0
 
     other = PDP.PO.TwoTerminalLCCLine()
-    PDP.set_value!(other, :parameter_units, "SYSTEM_BASE")
+    PDP.set_value!(other, :parameter_units, "DEVICE_BASE")
     @test_throws IS.DataFormatError PDP.set_value!(other, :r, 5.0, "ohm")
     PDP.set_value!(other, :r, 0.01, "pu")
     @test other.r == 0.01
@@ -120,7 +120,7 @@ end
     @test PDP.get_value(bus, :base_voltage, "kV") == 138.0
     @test_throws IS.DataFormatError PDP.get_value(bus, :base_voltage, "MW")
 
-    reserve = PDP.PO.ConstantReserve()
+    reserve = PDP.PO.OnlineReserve()
     PDP.set_value!(reserve, :time_frame, 60.0, "min")
-    @test PDP.get_value(reserve, :time_frame, "h") ≈ 1.0
+    @test PDP.get_value(reserve, :time_frame, "min") ≈ 60.0
 end

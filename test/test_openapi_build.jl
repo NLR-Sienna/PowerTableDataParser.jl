@@ -4,7 +4,7 @@
     @test PDP.get_base_power(sys) == 100.0
     @test length(PDP.get_components(sys, "ACBus")) == 73
     @test !isempty(PDP.get_components(sys, "ThermalStandard"))
-    @test !isempty(PDP.get_components(sys, "VariableReserve"))
+    @test !isempty(PDP.get_components(sys, "OnlineReserve"))
     # RTS has no load.csv, so the only loads are the ones the bus rows carry.
     @test length(PDP.get_components(sys, "PowerLoad")) == 51
 end
@@ -43,6 +43,7 @@ end
         "HydroTurbine",
         "Line",
         "LoadZone",
+        "OnlineReserve",
         "PowerLoad",
         "RenewableDispatch",
         "RenewableNonDispatch",
@@ -51,7 +52,6 @@ end
         "TransformerCircuit",
         "TwoTerminalGenericHVDCLine",
         "TwoWindingTransformer",
-        "VariableReserve",
     ]
     @test PDP.component_type_names(sys) == expected
 end

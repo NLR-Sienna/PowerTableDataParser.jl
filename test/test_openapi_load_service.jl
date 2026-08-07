@@ -3,6 +3,9 @@ function _services()
     sys = PDP.OpenAPISystem(100.0)
     PDP.loadzone_csv_parser!(sys, data)
     PDP.bus_csv_parser!(sys, data)
+    # Reserve membership resolves eligibility rules against registered device components,
+    # so generators must exist before services.
+    PDP.gen_csv_parser!(sys, data)
     PDP.services_csv_parser!(sys, data)
     return sys, data
 end
@@ -16,18 +19,16 @@ end
 
 @testset "every reserve product is emitted" begin
     sys, data = _services()
-    n =
-        length(PDP.get_components(sys, "VariableReserve")) +
-        length(PDP.get_components(sys, "ConstantReserve"))
+    # One type covers every product now: constant-vs-variable was never a structural
+    # difference, only whether a requirement time series is attached.
+    n = length(PDP.get_components(sys, "OnlineReserve"))
     @test n == DataFrames.nrow(PDP.get_dataframe(data, PDP.InputCategory.RESERVE))
     @test n == 7
-    # RTS states a requirement for every product, so all seven are variable.
-    @test length(PDP.get_components(sys, "VariableReserve")) == 7
 end
 
 @testset "reserves carry direction, requirement and time frame" begin
     sys, _ = _services()
-    for reserve in PDP.get_components(sys, "VariableReserve")
+    for reserve in PDP.get_components(sys, "OnlineReserve")
         @test PDP.get_value(reserve, :reserve_direction) in ("UP", "DOWN")
         @test PDP.get_value(reserve, :requirement) >= 0
         @test PDP.get_value(reserve, :time_frame) > 0
@@ -38,22 +39,57 @@ end
 @testset "the time frame is converted from seconds to minutes" begin
     sys, _ = _services()
     reserves = Dict(
-        PDP.get_value(r, :name) => r for r in PDP.get_components(sys, "VariableReserve")
+        PDP.get_value(r, :name) => r for r in PDP.get_components(sys, "OnlineReserve")
     )
     # Spin_Up_R1 states 600 s.
     @test PDP.get_value(reserves["Spin_Up_R1"], :time_frame) ≈ 10.0
-    @test PDP.get_value(reserves["Spin_Up_R1"], :time_frame, "s") ≈ 600.0
+    @test PDP.get_value(reserves["Spin_Up_R1"], :time_frame, "min") ≈ 10.0
     @test PDP.get_value(reserves["Spin_Up_R1"], :requirement) ≈ 40.413
     @test PDP.get_value(reserves["Reg_Down"], :reserve_direction) == "DOWN"
     @test PDP.get_value(reserves["Reg_Down"], :time_frame) ≈ 5.0
 end
 
-@testset "contributing devices are not emitted" begin
+@testset "membership is normalized into unified association rows" begin
     sys, _ = _services()
-    # A reserve-to-device link is many-to-many and has no schema; the eligibility
-    # columns are read and deliberately dropped.
-    reserve = first(PDP.get_components(sys, "VariableReserve"))
+    # The reserve-to-device link is many-to-many, so it is rows rather than a field on
+    # either side: the component carries no `contributing_devices`.
+    reserve = first(PDP.get_components(sys, "OnlineReserve"))
     @test !hasproperty(reserve, :contributing_devices)
+
+    # Service membership is one attribute_type among the rows in the unified
+    # supplemental_attribute_associations table (D10) — filtered by attribute_type rather
+    # than read off a dedicated table.
+    service_rows = filter(
+        row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
+        sys.supplemental_attribute_associations,
+    )
+    @test !isempty(service_rows)
+    reserve_ids = Set(
+        PDP.get_value(r, :id) for r in PDP.get_components(sys, "OnlineReserve")
+    )
+    # Every row points at a reserve, and no pair repeats.
+    pairs = Set{Tuple{Int, Int}}()
+    for row in service_rows
+        service_id = PDP.get_value(row, :attribute_id)
+        @test service_id in reserve_ids
+        pair = (service_id, PDP.get_value(row, :entity_id))
+        @test !(pair in pairs)
+        push!(pairs, pair)
+    end
+
+    # RTS scopes the three Spin_Up products by region, so together they cover the same
+    # generator set as any one system-wide product.
+    by_service = Dict{Int, Int}()
+    for row in service_rows
+        id = PDP.get_value(row, :attribute_id)
+        by_service[id] = get(by_service, id, 0) + 1
+    end
+    named = Dict(
+        PDP.get_value(r, :name) => by_service[PDP.get_value(r, :id)] for
+        r in PDP.get_components(sys, "OnlineReserve")
+    )
+    @test named["Spin_Up_R1"] + named["Spin_Up_R2"] + named["Spin_Up_R3"] ==
+          named["Reg_Up"]
 end
 
 @testset "a separately stated load is named apart from its bus load" begin

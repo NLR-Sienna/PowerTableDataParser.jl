@@ -96,6 +96,80 @@ end
     end
 end
 
+@testset "zero-shunt buses emit no FixedAdmittance" begin
+    sys, _ = _topology()
+    # This fixture's descriptor maps shunt columns to names absent from
+    # power_system_inputs.json (mvar_shut_b typo, mw_shunt_g prefix mismatch), so
+    # every row's shunt_g/shunt_b hold their 0 defaults regardless of the
+    # underlying data — see the comment atop topology.jl.
+    @test isempty(PDP.get_components(sys, "FixedAdmittance"))
+end
+
+@testset "nonzero shunt admittance produces a FixedAdmittance" begin
+    sys = PDP.OpenAPISystem(100.0)
+    reg = PDP.get_registry(sys)
+    bus = PDP.PO.ACBus()
+    PDP.set_value!(bus, :id, PDP.register_bus!(reg, 106, "Alber"))
+    PDP.set_value!(bus, :number, 106)
+    PDP.set_value!(bus, :name, "Alber")
+    PDP.set_value!(bus, :available, true)
+    PDP.set_value!(bus, :bustype, "PQ")
+    PDP.set_value!(bus, :angle, 0.0, "rad")
+    PDP.set_value!(bus, :magnitude, 1.0, "pu")
+    PDP.set_value!(bus, :base_voltage, 138.0, "kV")
+    PDP.set_value!(bus, :voltage_limits, (min = 0.95, max = 1.05), "pu")
+    PDP.add_component!(sys, bus)
+    bus_id = PDP.get_value(bus, :id)
+
+    # Raw values from RTS-GMLC-0.2.3's bus.csv for bus 106 ("Alber"): MW Shunt
+    # G = 0.0, MVAR Shunt B = -100.0.
+    row = (name = "Alber", shunt_g = 0.0, shunt_b = -100.0)
+    PDP._add_fixed_admittance!(sys, reg, row, bus_id, false)
+    shunts = PDP.get_components(sys, "FixedAdmittance")
+    @test length(shunts) == 1
+    shunt = only(shunts)
+    @test PDP.get_value(shunt, :name) == "Alber"
+    @test PDP.get_value(shunt, :bus) == bus_id
+    @test PDP.get_value(shunt, :admittance_units) == "DEVICE_MVAR"
+    y = PDP.get_value(shunt, :Y)
+    @test y.real ≈ 0.0
+    @test y.imag ≈ -100.0
+
+    zero_row = (name = "Bajer", shunt_g = 0.0, shunt_b = 0.0)
+    PDP._add_fixed_admittance!(sys, reg, zero_row, bus_id, false)
+    @test length(PDP.get_components(sys, "FixedAdmittance")) == 1
+
+    # Under a DEVICE_BASE system the value has already been divided by the
+    # system base (there is no separate device base for a shunt), so multiplying
+    # by that base recovers the MVAr the raw column held.
+    per_unit_row = (name = "Camus", shunt_g = 0.0, shunt_b = -1.0)
+    PDP._add_fixed_admittance!(sys, reg, per_unit_row, bus_id, true)
+    shunts2 = PDP.get_components(sys, "FixedAdmittance")
+    @test length(shunts2) == 2
+    camus = first(s for s in shunts2 if PDP.get_value(s, :name) == "Camus")
+    @test PDP.get_value(camus, :admittance_units) == "DEVICE_MVAR"
+    y2 = PDP.get_value(camus, :Y)
+    @test y2.real ≈ 0.0
+    @test y2.imag ≈ -1.0 * PDP.get_base_power(sys)
+    @test y2.imag ≈ -100.0
+    @test PDP.get_value(camus, :Y, "MVAr").imag ≈ -100.0
+
+    # A pu row and a raw row that describe the same physical shunt land on the
+    # same number under one basis.
+    @test y2.imag ≈ y.imag
+
+    nonzero_g = (name = "Dumas", shunt_g = 0.02, shunt_b = -0.5)
+    PDP._add_fixed_admittance!(sys, reg, nonzero_g, bus_id, true)
+    dumas = first(
+        s for
+        s in PDP.get_components(sys, "FixedAdmittance") if
+        PDP.get_value(s, :name) == "Dumas"
+    )
+    y3 = PDP.get_value(dumas, :Y)
+    @test y3.real ≈ 2.0
+    @test y3.imag ≈ -50.0
+end
+
 @testset "areas take their peak from the buses they hold" begin
     sys, _ = _topology()
     areas = PDP.get_components(sys, "Area")

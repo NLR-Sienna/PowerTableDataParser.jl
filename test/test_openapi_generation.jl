@@ -93,8 +93,8 @@ end
     @test ramp.up ≈ 2.0
     @test ramp.down ≈ 2.0
     time_limits = PDP.get_value(steam, :time_limits)
-    @test time_limits.up ≈ 8.0
-    @test time_limits.down ≈ 4.0
+    @test time_limits.up ≈ 480.0
+    @test time_limits.down ≈ 240.0
     # No Status at Start column in RTS, so the descriptor default applies.
     @test PDP.get_value(steam, :status)
     @test !PDP.get_value(steam, :must_run)

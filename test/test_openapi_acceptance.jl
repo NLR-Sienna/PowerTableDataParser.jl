@@ -18,7 +18,7 @@
         @test length(PDP.get_components(sys, "SynchronousCondenser")) == 3
         @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
         @test length(PDP.get_components(sys, "PowerLoad")) == 51
-        @test length(PDP.get_components(sys, "VariableReserve")) == 7
+        @test length(PDP.get_components(sys, "OnlineReserve")) == 7
         @test length(sys.time_series_associations) == 362
         @test length(sys.time_series) == 260
     end
@@ -88,15 +88,28 @@
             PDP.get_supplemental_attributes(sys, "GeometricDistributionForcedOutage"),
         ) == 214
         @test length(PDP.get_supplemental_attributes(sys, "GeographicInfo")) == 73
-        @test length(sys.supplemental_attribute_associations) == 623
+        # D10: the unified table also carries the 510 service-membership rows below, so the
+        # 623 plain attribute associations are counted by filtering on attribute_type.
+        plain_attribute_types =
+            Set(["EmissionsData", "GeometricDistributionForcedOutage", "GeographicInfo"])
+        @test count(
+            row -> PDP.get_value(row, :attribute_type) in plain_attribute_types,
+            sys.supplemental_attribute_associations,
+        ) == 623
         # Columns with no field at all are kept against their component.
         @test length(sys.ext) == 352
     end
 
-    @testset "known omissions are asserted, not silent" begin
-        # Reserve-to-device contribution is many-to-many with no SiennaSchemas
-        # representation (design D5), so it is deliberately not emitted.
-        reserve = first(PDP.get_components(sys, "VariableReserve"))
+    @testset "reserve membership is rows, not a component property" begin
+        # Reserve-to-device contribution is many-to-many, so it is emitted as rows in the
+        # unified supplemental_attribute_associations table (D10) rather than a field on
+        # the reserve.
+        reserve = first(PDP.get_components(sys, "OnlineReserve"))
         @test !hasproperty(reserve, :contributing_devices)
+        service_rows = count(
+            row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
+            sys.supplemental_attribute_associations,
+        )
+        @test service_rows == 510
     end
 end

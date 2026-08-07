@@ -61,8 +61,8 @@ end
     # The bus load's base is the system base.
     @test PDP.get_value(per_unit, :max_active_power) ≈ 1.08
 
-    natural_reserve = _named(_system("NATURAL_UNITS"), "VariableReserve", "Spin_Up_R1")
-    per_unit_reserve = _named(_system("DEVICE_BASE"), "VariableReserve", "Spin_Up_R1")
+    natural_reserve = _named(_system("NATURAL_UNITS"), "OnlineReserve", "Spin_Up_R1")
+    per_unit_reserve = _named(_system("DEVICE_BASE"), "OnlineReserve", "Spin_Up_R1")
     @test PDP.get_value(natural_reserve, :requirement) ≈ 40.413
     @test PDP.get_value(per_unit_reserve, :requirement) ≈ 0.40413
     # The time frame is a duration, not a power.

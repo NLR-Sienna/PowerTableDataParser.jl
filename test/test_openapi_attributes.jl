@@ -93,14 +93,30 @@ end
         union!(ids, Set(PDP.get_value(c, :id) for c in PDP.get_components(sys, type_name)))
     end
     attribute_ids = Set(PDP.get_value(a, :id) for a in sys.supplemental_attributes)
-    @test length(sys.supplemental_attribute_associations) ==
-          length(sys.supplemental_attributes)
-    for association in sys.supplemental_attribute_associations
-        @test association.entity_id in ids
-        @test association.attribute_id in attribute_ids
-    end
     # Attribute ids come from the same counter as components, so they never collide.
     @test isempty(intersect(ids, attribute_ids))
+
+    # D10: the unified table also carries service-membership rows (attribute_id names a
+    # service *component*, not a supplemental attribute), so a row's attribute_id resolves
+    # against one id space or the other, never neither.
+    attribute_rows = filter(
+        a -> PDP.get_value(a, :attribute_id) in attribute_ids,
+        sys.supplemental_attribute_associations,
+    )
+    service_rows = filter(
+        a -> PDP.get_value(a, :attribute_id) in ids,
+        sys.supplemental_attribute_associations,
+    )
+    @test length(attribute_rows) == length(sys.supplemental_attributes)
+    @test length(attribute_rows) + length(service_rows) ==
+          length(sys.supplemental_attribute_associations)
+
+    for association in sys.supplemental_attribute_associations
+        entity_id = PDP.get_value(association, :entity_id)
+        attribute_id = PDP.get_value(association, :attribute_id)
+        @test entity_id in ids
+        @test (attribute_id in attribute_ids) || (attribute_id in ids)
+    end
 end
 
 @testset "columns the data model has no field for are kept, not dropped" begin
@@ -139,7 +155,8 @@ end
         line_id = PDP.get_id(reg, "Line", "A1")
         @test doc["ext"][string(line_id)]["Length"] ≈ 3.0
         @test length(doc["supplemental_attributes"]) == 623
-        @test length(doc["supplemental_attribute_associations"]) == 623
+        # D10: the unified table also carries the 510 service-membership rows.
+        @test length(doc["supplemental_attribute_associations"]) == 1133
     end
 end
 
