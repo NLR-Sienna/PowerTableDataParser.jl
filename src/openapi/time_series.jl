@@ -24,11 +24,16 @@ const CATEGORY_TO_TYPES = Dict(
         "SynchronousCondenser",
         "EnergyReservoirStorage",
     ],
-    "ElectricLoad" => ["PowerLoad", "StandardLoad"],
+    # The deleted PSCB parser dispatched this category on the abstract PSY type
+    # `ElectricLoad` (`get_components(ElectricLoad, sys)`), so any subtype sharing a
+    # bus — including `FixedAdmittance`, confirmed by the oracle comparison — was a
+    # candidate, not just PowerLoad/StandardLoad.
+    "ElectricLoad" => ["PowerLoad", "StandardLoad", "FixedAdmittance"],
     "LoadZone" => ["LoadZone"],
     "Area" => ["Area"],
-    "Reserve" => ["VariableReserve", "ConstantReserve"],
+    "Reserve" => ["OnlineReserve"],
     "Storage" => ["EnergyReservoirStorage"],
+    "Component" => ["HydroReservoir"],
 )
 
 function category_to_type_names(category::AbstractString)
@@ -119,8 +124,14 @@ const AGGREGATION_BUS_PROPERTIES = Dict("LoadZone" => "load_zone", "Area" => "ar
 """Multipliers that make a series belong to the loads rather than the aggregation."""
 const FANNED_OUT_MULTIPLIERS = ("get_max_active_power", "get_max_reactive_power")
 
-"""Component types that carry a load series."""
-const LOAD_TYPES = ("PowerLoad", "StandardLoad")
+"""Component types that carry a load series.
+
+Mirrors the deleted PSCB parser's abstract-type dispatch (`get_components(ElectricLoad,
+sys)`): every `ElectricLoad` subtype sharing a bus with the aggregation is a candidate,
+including `FixedAdmittance` — confirmed materially real by the oracle comparison, which
+found RTS-GMLC-0.2.3's 3 shunt buses (Alber/Bajer/Camus, each also carrying a `PowerLoad`)
+fanned their zone's load series out to the shunt too under the old parser."""
+const LOAD_TYPES = ("PowerLoad", "StandardLoad", "FixedAdmittance")
 
 """
 Loads sitting under an aggregation topology.

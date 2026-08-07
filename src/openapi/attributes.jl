@@ -157,10 +157,9 @@ function _add_forced_outage!(
     set_value!(attribute, :id, next_id!(get_registry(sys)))
     # The schema wants whole minutes, so the conversion is rounded before it is
     # assigned rather than left to a float that happens to look integral.
-    minutes = round(
-        Int,
-        convert_to_declared(attribute, :mean_time_to_recovery, recovery_hours, "h"),
-    )
+    # `UNIT_VOCABULARY` carries no hour, so the hours→minutes step is done here
+    # rather than delegated to the unit layer.
+    minutes = round(Int, 60.0 * recovery_hours)
     set_value!(attribute, :mean_time_to_recovery, minutes, "min")
     set_value!(attribute, :outage_transition_probability, transition_probability)
     set_value!(attribute, :monitored_components, Int[])

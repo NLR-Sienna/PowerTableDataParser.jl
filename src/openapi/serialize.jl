@@ -35,8 +35,11 @@ function serialize(sys::OpenAPISystem, ts_basename::AbstractString)
         "supplemental_attributes" => sys.supplemental_attributes,
         "supplemental_attribute_associations" =>
             sys.supplemental_attribute_associations,
-        # Keyed by component id, which is unique across every type.
-        "ext" => Dict(string(id) => extras for (id, extras) in sys.ext),
+        # `sys.ext` is deliberately NOT emitted. It holds source columns no schema field
+        # claims; a consumer has nowhere to put them, so writing them would only be data
+        # that round-trips into nothing. They stay on the container for callers that want
+        # the raw table values in-process.
+        "ext" => Dict{String, Any}(),
         "time_series_associations" => sys.time_series_associations,
         "time_series_storage_file" => ts_basename,
     )

@@ -30,9 +30,9 @@ end
 """
 Unit conventions a document may be written in, from the schemas' `UnitSystem`.
 
-`SYSTEM_BASE` is absent on purpose: the input descriptors target device base for
-injectors and system base only where they say so, so there is no single
-system-base reading of a parsed table.
+The schemas offer no system-base option: per-unit data historically on the system
+base records that base in the component's own `base_power` and rides as
+`DEVICE_BASE`.
 """
 const UNIT_SYSTEMS = ("NATURAL_UNITS", "DEVICE_BASE")
 
@@ -119,6 +119,48 @@ function add_supplemental_attribute!(
         PC.SupplementalAttributeAssociation(;
             attribute_id = get_value(attribute, :id),
             entity_id = entity_id,
+            attribute_type = string(nameof(typeof(attribute))),
+        ),
+    )
+    return
+end
+
+"""
+Record that `entity_id` contributes to the service `service_id`.
+
+A service membership is a row in the same unified `supplemental_attribute_associations`
+table as every other attribute link (D10): `service_id` is emitted as `attribute_id` and
+`attribute_type` names the service's own type, so a reader distinguishes a membership row
+from a plain attribute by looking `attribute_id` up as a component rather than by any field
+here. Neither `group_index` nor `role` applies to a membership row.
+
+One row per pair, so each membership is individually addressable. Duplicate pairs are
+rejected: the tables express membership as overlapping eligibility rules, so the same
+device can match one reserve twice, and silently collapsing that would hide a malformed
+rule set.
+"""
+function add_service_association!(
+    sys::OpenAPISystem,
+    service_id::Int,
+    entity_id::Int,
+    attribute_type::AbstractString,
+)
+    for existing in sys.supplemental_attribute_associations
+        if get_value(existing, :attribute_id) == service_id &&
+           get_value(existing, :entity_id) == entity_id
+            throw(
+                IS.DataFormatError(
+                    "duplicate service membership: service_id=$service_id entity_id=$entity_id",
+                ),
+            )
+        end
+    end
+    push!(
+        sys.supplemental_attribute_associations,
+        PC.SupplementalAttributeAssociation(;
+            attribute_id = service_id,
+            entity_id = entity_id,
+            attribute_type = String(attribute_type),
         ),
     )
     return

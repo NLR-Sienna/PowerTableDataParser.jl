@@ -159,14 +159,24 @@ function make_ramplimits(
     return (up = _maybe_float(up), down = _maybe_float(down))
 end
 
+"""
+Minimum up/down times in minutes.
+
+The source columns are hours (RTS names them `Min Up Time Hr` / `Min Down Time Hr`)
+but the schema declares `min`, and `UNIT_VOCABULARY` carries no hour, so the
+conversion cannot be delegated to `set_value!` and happens here instead.
+"""
 function make_timelimits(gen, up_column::Symbol, down_column::Symbol)
     up_time = _maybe_float(get(gen, up_column, nothing))
     down_time = _maybe_float(get(gen, down_column, nothing))
     if isnothing(up_time) && isnothing(down_time)
         return nothing
     end
-    return (up = up_time, down = down_time)
+    return (up = _hours_to_minutes(up_time), down = _hours_to_minutes(down_time))
 end
+
+_hours_to_minutes(::Nothing) = nothing
+_hours_to_minutes(hours::Real) = 60.0 * hours
 
 """
 Device base power, substituting the system base for a unit that states none.
@@ -227,7 +237,7 @@ function make_thermal_generator(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
-        "h",
+        "min",
     )
     set_value!(
         component,
@@ -369,7 +379,7 @@ function make_hydro_dispatch(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
-        "h",
+        "min",
     )
     set_value!(component, :base_power, device_base_power(sys, gen), "MVA")
     set_value!(
@@ -498,7 +508,7 @@ function make_hydro_turbine(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
-        "h",
+        "min",
     )
     set_value!(component, :prime_mover_type, prime_mover_type(gen.unit_type))
     return component
