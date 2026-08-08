@@ -54,7 +54,7 @@ end
     reg = PDP.get_registry(sys)
     by_entity = Dict(
         a.entity_id => a.attribute_id for
-        a in PDP.get_document(sys).supplemental_attribute_associations
+        a in PDP.get_supplemental_attribute_associations(sys)
     )
     attributes = Dict(PDP.get_value(o, :id) => o for o in outages)
 
@@ -103,17 +103,17 @@ end
     # against one id space or the other, never neither.
     attribute_rows = filter(
         a -> PDP.get_value(a, :attribute_id) in attribute_ids,
-        PDP.get_document(sys).supplemental_attribute_associations,
+        PDP.get_supplemental_attribute_associations(sys),
     )
     service_rows = filter(
         a -> PDP.get_value(a, :attribute_id) in ids,
-        PDP.get_document(sys).supplemental_attribute_associations,
+        PDP.get_supplemental_attribute_associations(sys),
     )
     @test length(attribute_rows) == length(PDP.get_document(sys).supplemental_attributes)
     @test length(attribute_rows) + length(service_rows) ==
-          length(PDP.get_document(sys).supplemental_attribute_associations)
+          length(PDP.get_supplemental_attribute_associations(sys))
 
-    for association in PDP.get_document(sys).supplemental_attribute_associations
+    for association in PDP.get_supplemental_attribute_associations(sys)
         entity_id = PDP.get_value(association, :entity_id)
         attribute_id = PDP.get_value(association, :attribute_id)
         @test entity_id in ids

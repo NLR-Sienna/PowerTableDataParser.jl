@@ -1,19 +1,14 @@
 """
-The document PTDP emits, as a thin wrapper composing the canonical
-`PC.SystemDocument` rather than duplicating its state.
+The document PTDP emits, as a thin wrapper over `PC.SystemDocument`.
 
-`document` is the ONLY serialized artifact: components, the association tables,
-`ext` and the unit convention all live on it, reached through PC's own API
-(`PC.add_component!`, `PC.get_components`, ...) so this wrapper does not
-re-implement what the document already owns.
+`document` is the only serialized artifact: components, the association tables,
+`ext` and the unit convention all live on it.
 
-`registry` is build-time scaffolding and is not serialized: it delegates id
-allocation to `document` (see `IdRegistry`) and keeps only the lookup indices
-(by name, by bus number, by arc) that the document has no use for once built.
+`registry` is build-time scaffolding and is not serialized: it keeps the lookup
+indices (by name, by bus number, by arc) the document has no use for once built.
 
-`time_series` is the IS time-series payload this package writes to its own HDF5
-sidecar; `document` carries only the `TimeSeriesAssociation` metadata rows
-pointing at it, not the values themselves.
+`time_series` is the payload written to the HDF5 sidecar; `document` carries
+only the `TimeSeriesAssociation` rows pointing at it.
 """
 struct OpenAPISystem
     document::PC.SystemDocument
@@ -47,12 +42,12 @@ end
 
 get_document(sys::OpenAPISystem) = sys.document
 
-"""
-Record the table columns the data model has no field for, against a component.
+get_supplemental_attribute_associations(sys::OpenAPISystem) =
+    get_document(sys).supplemental_attribute_associations
+get_time_series_associations(sys::OpenAPISystem) =
+    get_document(sys).time_series_associations
 
-Kept beside the components rather than inside them: the schemas describe what a
-component is, and this is whatever else the source table happened to state.
-"""
+"""Record the table columns the data model has no field for, against a component."""
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
     PC.set_ext!(get_document(sys), component_id, extras)
     return
@@ -85,12 +80,9 @@ end
 """
 Record a supplemental attribute and the entity it describes.
 
-Attributes are held in one list rather than bucketed by type: nothing iterates
-them per type, and the association carries the link a consumer needs. Neither
-`group_index` nor `role` applies to anything this parser emits — it has no
-plant-family attributes and reserve membership goes through
-`add_service_association!` below, not this function — so it always calls
-`PC.add_supplemental_attribute!` with both left at their `nothing` default.
+Neither `group_index` nor `role` applies to anything this parser emits: it has no
+plant-family attributes, and reserve membership goes through
+`add_service_association!` below.
 """
 function add_supplemental_attribute!(
     sys::OpenAPISystem,
@@ -110,10 +102,9 @@ table as every other attribute link (D10): `service_id` is emitted as `attribute
 from a plain attribute by looking `attribute_id` up as a component rather than by any field
 here. Neither `group_index` nor `role` applies to a membership row.
 
-There is no `service_id` model object to hand `PC.add_supplemental_attribute!` — the
-"attribute" here is a component that already exists — so this appends the association
-row directly, which `PC.validate_document` already accounts for (it checks `attribute_id`
-against components and attributes together for exactly this reason).
+There is no attribute object to hand `PC.add_supplemental_attribute!` — the "attribute"
+is a component that already exists — so the row is appended directly; `PC.validate_document`
+resolves `attribute_id` against components and attributes together.
 
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
@@ -126,7 +117,7 @@ function add_service_association!(
     entity_id::Int,
     attribute_type::AbstractString,
 )
-    associations = get_document(sys).supplemental_attribute_associations
+    associations = get_supplemental_attribute_associations(sys)
     for existing in associations
         if get_value(existing, :attribute_id) == service_id &&
            get_value(existing, :entity_id) == entity_id

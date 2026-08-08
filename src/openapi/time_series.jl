@@ -242,11 +242,7 @@ function _add_association!(
     multiplier,
 )
     association = PC.TimeSeriesAssociation()
-    set_value!(
-        association,
-        :id,
-        length(get_document(sys).time_series_associations) + 1,
-    )
+    set_value!(association, :id, length(get_time_series_associations(sys)) + 1)
     set_value!(association, :time_series_uuid, string(IS.get_uuid(series)))
     set_value!(association, :time_series_type, "SingleTimeSeries")
     set_value!(

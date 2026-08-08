@@ -94,9 +94,7 @@ function dc_branch_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
         # The tables give one loss margin, so the loss is proportional with no
         # constant term.
         set_value!(line, :loss, linear_curve(_as_float(dc_branch.loss)))
-        # TwoTerminalGenericHVDCLine has no device base of its own; base_power
-        # records the system base here, the documented convention for the types
-        # this applies to (D-C).
+        # No device base of its own: base_power records the system base (D-C).
         set_value!(line, :base_power, get_base_power(sys), "MVA")
         add_component!(sys, line)
     end

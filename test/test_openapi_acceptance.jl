@@ -19,7 +19,7 @@
         @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
         @test length(PDP.get_components(sys, "PowerLoad")) == 51
         @test length(PDP.get_components(sys, "OnlineReserve")) == 7
-        @test length(PDP.get_document(sys).time_series_associations) == 362
+        @test length(PDP.get_time_series_associations(sys)) == 362
         @test length(sys.time_series) == 260
     end
 
@@ -44,7 +44,7 @@
         for gen in PDP.get_components(sys, "ThermalStandard")
             @test PDP.get_value(gen, :bus) in bus_ids
         end
-        for association in PDP.get_document(sys).time_series_associations
+        for association in PDP.get_time_series_associations(sys)
             @test PDP.get_value(association, :owner_id) in ids
         end
     end
@@ -55,7 +55,7 @@
                 @test OpenAPI.check_required(component)
             end
         end
-        for association in PDP.get_document(sys).time_series_associations
+        for association in PDP.get_time_series_associations(sys)
             @test OpenAPI.check_required(association)
         end
     end
@@ -69,14 +69,14 @@
             @test isfile(h5)
             uuids = Set(
                 PDP.get_value(a, :time_series_uuid) for
-                a in PDP.get_document(sys).time_series_associations
+                a in PDP.get_time_series_associations(sys)
             )
             HDF5.h5open(h5, "r") do f
                 @test length(keys(f["time_series"])) == length(uuids)
             end
             resolutions = Set(
                 PDP.get_value(a, :resolution) for
-                a in PDP.get_document(sys).time_series_associations
+                a in PDP.get_time_series_associations(sys)
             )
             @test resolutions == Set(["PT3600S", "PT300S"])
         end
@@ -96,7 +96,7 @@
             Set(["EmissionsData", "GeometricDistributionForcedOutage", "GeographicInfo"])
         @test count(
             row -> PDP.get_value(row, :attribute_type) in plain_attribute_types,
-            PDP.get_document(sys).supplemental_attribute_associations,
+            PDP.get_supplemental_attribute_associations(sys),
         ) == 623
         # Columns with no field at all are kept against their component.
         @test length(PDP.get_document(sys).ext) == 352
@@ -137,7 +137,7 @@
         @test !hasproperty(reserve, :contributing_devices)
         service_rows = count(
             row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
-            PDP.get_document(sys).supplemental_attribute_associations,
+            PDP.get_supplemental_attribute_associations(sys),
         )
         @test service_rows == 510
     end

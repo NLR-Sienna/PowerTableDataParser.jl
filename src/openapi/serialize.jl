@@ -1,6 +1,5 @@
-# `PC.write_document` owns the JSON envelope now: it builds the tree, validates the
-# document and encodes it in one pass. This file supplies only what PC's document does
-# not: the HDF5 sidecar's name and its values.
+# `PC.write_document` owns the JSON envelope; this file supplies only what the document
+# does not carry: the HDF5 sidecar's name and its values.
 
 """HDF5 sidecar name for a document, following the PowerSystems convention."""
 function time_series_filename(filename::AbstractString)
@@ -8,13 +7,10 @@ function time_series_filename(filename::AbstractString)
 end
 
 """
-`doc`, pointed at `ts_basename` (or unpointed when the system carries no time series).
+`doc`, pointed at `ts_basename`.
 
-`PC.SystemDocument`'s scalar fields, `time_series_storage_file` included, are immutable,
-so the document built while parsing cannot be told its eventual filename as parsing goes.
-This reconstructs the struct through PC's own default positional constructor, sharing every
-mutable container (`components`, `ext`, the association vectors, the id counter) with `doc`
-by reference rather than copying them, so it is the same document under a different name.
+`time_series_storage_file` is immutable and only known once the output filename is, so the
+struct is rebuilt around the same mutable containers — by reference, not copied.
 """
 function _document_for_write(doc::PC.SystemDocument, ts_basename::Union{Nothing, String})
     return PC.SystemDocument(
@@ -37,8 +33,7 @@ end
 Write the document and its time series sidecar.
 
 The sidecar is named after the document and sits beside it, so the pair can be moved
-together. `PC.write_document` validates the document before it reaches disk; a system with
-no time series points at no sidecar rather than an empty one.
+together. A system with no time series points at no sidecar rather than an empty one.
 """
 function to_json(
     sys::OpenAPISystem,
@@ -58,7 +53,10 @@ function to_json(
     end
     document = _document_for_write(get_document(sys), ts_basename)
     PC.write_document(document, filename; pretty = pretty, force = force)
-    @info "Serialized OpenAPISystem to $filename" *
-          (isnothing(ts_basename) ? "" : " and its sidecar $ts_basename")
+    if isnothing(ts_basename)
+        @info "Serialized OpenAPISystem to $filename"
+    else
+        @info "Serialized OpenAPISystem to $filename and its sidecar $ts_basename"
+    end
     return
 end

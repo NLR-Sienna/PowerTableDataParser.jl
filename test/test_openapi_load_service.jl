@@ -61,7 +61,7 @@ end
     # than read off a dedicated table.
     service_rows = filter(
         row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
-        PDP.get_document(sys).supplemental_attribute_associations,
+        PDP.get_supplemental_attribute_associations(sys),
     )
     @test !isempty(service_rows)
     reserve_ids = Set(

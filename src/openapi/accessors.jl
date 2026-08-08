@@ -6,10 +6,6 @@
 # as a String. PSCB resolves it to a PowerSystems DataType via getfield, which
 # PTDP cannot do and does not need to.
 
-function string_compare(str1, str2; casefold = true)
-    return normalize(str1; casefold = casefold) === normalize(str2; casefold = casefold)
-end
-
 """
 Return the mapped component type name for a fuel and unit type.
 
@@ -42,86 +38,54 @@ function get_generator_type(fuel, unit_type, mappings::Dict{NamedTuple, String})
 end
 
 """
-PC's vocabulary spelling for a unit name this function recognizes, when it differs from the
-one PTDP's own descriptors use.
-
-`power_system_inputs.json` and the user descriptors spell these in full words
-(`"degree"`, `"radian"`) while `PC.UNIT_VOCABULARY` keeps the same quantity abbreviated
-(`"deg"`, `"rad"`); this translates PTDP's spelling onto PC's without touching the
-descriptor files, which name units in the vocabulary's own spelling everywhere else
-(`"GW"`, `"GWh"`, ...).
+Conversions PC's vocabulary states, keyed by the casefolded (From, To) the descriptors
+spell and valued with the quantity plus each unit's spelling in `PC.UNIT_VOCABULARY` —
+which abbreviates the angles the descriptors write out in full.
 """
-const _PC_UNIT_ALIASES = Dict("degree" => "deg", "radian" => "rad")
-_pc_unit(name::AbstractString) = get(_PC_UNIT_ALIASES, name, name)
-
-"""Scale `value` by the ratio PC's vocabulary states between two units of `quantity`."""
-function _pc_scale(
-    value::Float64,
-    quantity::AbstractString,
-    from::AbstractString,
-    to::AbstractString,
+const _PC_CONVERSIONS = Dict(
+    ("degree", "radian") => ("Angle", "deg", "rad"),
+    ("radian", "degree") => ("Angle", "rad", "deg"),
+    ("tw", "mw") => ("ActivePower", "TW", "MW"),
+    ("gw", "mw") => ("ActivePower", "GW", "MW"),
+    ("kw", "mw") => ("ActivePower", "kW", "MW"),
+    ("twh", "mwh") => ("ElectricalEnergy", "TWh", "MWh"),
+    ("gwh", "mwh") => ("ElectricalEnergy", "GWh", "MWh"),
+    ("kwh", "mwh") => ("ElectricalEnergy", "kWh", "MWh"),
 )
-    return value * PC.conversion_factor(quantity, _pc_unit(from)) /
-           PC.conversion_factor(quantity, _pc_unit(to))
-end
 
 # hour/minute/second are deliberately absent from UNIT_VOCABULARY (the schemas' time-tier
 # design keeps a field to one declared unit rather than letting every duration quantity carry
-# every tier), so those three conversions stay hand-rolled below rather than routed through PC.
+# every tier), so those three conversions stay hand-rolled rather than routed through PC.
+const _TIME_CONVERSIONS = Dict(
+    ("hour", "second") => 3600.0,
+    ("minute", "second") => 60.0,
+    ("hour", "minute") => 60.0,
+    ("minute", "hour") => 1 / 60,
+    ("second", "minute") => 1 / 60,
+    ("second", "hour") => 1 / 3600,
+)
+
 function convert_units!(
     value::Float64,
     unit_conversion::NamedTuple{(:From, :To), Tuple{String, String}},
 )
-    if string_compare(unit_conversion.From, "degree") &&
-       string_compare(unit_conversion.To, "radian")
-        value = _pc_scale(value, "Angle", "degree", "radian")
-    elseif string_compare(unit_conversion.From, "radian") &&
-           string_compare(unit_conversion.To, "degree")
-        value = _pc_scale(value, "Angle", "radian", "degree")
-    elseif string_compare(unit_conversion.From, "TW") &&
-           string_compare(unit_conversion.To, "MW")
-        value = _pc_scale(value, "ActivePower", "TW", "MW")
-    elseif string_compare(unit_conversion.From, "TWh") &&
-           string_compare(unit_conversion.To, "MWh")
-        value = _pc_scale(value, "ElectricalEnergy", "TWh", "MWh")
-    elseif string_compare(unit_conversion.From, "GW") &&
-           string_compare(unit_conversion.To, "MW")
-        value = _pc_scale(value, "ActivePower", "GW", "MW")
-    elseif string_compare(unit_conversion.From, "GWh") &&
-           string_compare(unit_conversion.To, "MWh")
-        value = _pc_scale(value, "ElectricalEnergy", "GWh", "MWh")
-    elseif string_compare(unit_conversion.From, "kW") &&
-           string_compare(unit_conversion.To, "MW")
-        value = _pc_scale(value, "ActivePower", "kW", "MW")
-    elseif string_compare(unit_conversion.From, "kWh") &&
-           string_compare(unit_conversion.To, "MWh")
-        value = _pc_scale(value, "ElectricalEnergy", "kWh", "MWh")
-    elseif string_compare(unit_conversion.From, "hour") &&
-           string_compare(unit_conversion.To, "second")
-        value *= 3600
-    elseif string_compare(unit_conversion.From, "minute") &&
-           string_compare(unit_conversion.To, "second")
-        value *= 60
-    elseif string_compare(unit_conversion.From, "hour") &&
-           string_compare(unit_conversion.To, "minute")
-        value *= 60
-    elseif string_compare(unit_conversion.From, "minute") &&
-           string_compare(unit_conversion.To, "hour")
-        value /= 60
-    elseif string_compare(unit_conversion.From, "second") &&
-           string_compare(unit_conversion.To, "minute")
-        value /= 60
-    elseif string_compare(unit_conversion.From, "second") &&
-           string_compare(unit_conversion.To, "hour")
-        value /= 3600
-    else
-        throw(
-            IS.DataFormatError(
-                "Unit conversion from $(unit_conversion.From) to $(unit_conversion.To) not supported",
-            ),
-        )
+    key = (
+        normalize(unit_conversion.From; casefold = true),
+        normalize(unit_conversion.To; casefold = true),
+    )
+    if haskey(_PC_CONVERSIONS, key)
+        quantity, from, to = _PC_CONVERSIONS[key]
+        return value * PC.conversion_factor(quantity, from) /
+               PC.conversion_factor(quantity, to)
     end
-    return value
+    if haskey(_TIME_CONVERSIONS, key)
+        return value * _TIME_CONVERSIONS[key]
+    end
+    throw(
+        IS.DataFormatError(
+            "Unit conversion from $(unit_conversion.From) to $(unit_conversion.To) not supported",
+        ),
+    )
 end
 
 function convert_units!(
