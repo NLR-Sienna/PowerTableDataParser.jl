@@ -97,7 +97,7 @@ end
 Record that `entity_id` contributes to the service `service_id`.
 
 A service membership is a row in the same unified `supplemental_attribute_associations`
-table as every other attribute link (D10): `service_id` is emitted as `attribute_id` and
+table as every other attribute link: `service_id` is emitted as `attribute_id` and
 `attribute_type` names the service's own type, so a reader distinguishes a membership row
 from a plain attribute by looking `attribute_id` up as a component rather than by any field
 here. Neither `group_index` nor `role` applies to a membership row.

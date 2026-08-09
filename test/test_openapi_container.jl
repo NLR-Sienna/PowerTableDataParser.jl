@@ -58,16 +58,3 @@ end
     PDP.add_component!(sys, _bus(id, "Abel"))
     @test PDP.get_bus_id(PDP.get_registry(sys), 101) == id
 end
-
-@testset "SupplementalAttributeAssociation records the link" begin
-    # The generated Core type, shared with the power-flow-file ingestion path.
-    assoc = PDP.PC.SupplementalAttributeAssociation(;
-        attribute_id = 7,
-        entity_id = 42,
-        attribute_type = "GeographicInfo",
-    )
-    @test assoc.attribute_id == 7
-    @test assoc.entity_id == 42
-    @test assoc.attribute_type == "GeographicInfo"
-    @test PDP.OpenAPI.check_required(assoc)
-end

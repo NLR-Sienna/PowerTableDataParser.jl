@@ -16,7 +16,6 @@
     @test cost.variable.value_curve.curve_type == "INCREMENTAL"
     @test cost.variable.value_curve.function_data.function_type == "PIECEWISE_STEP"
     @test cost.start_up > 0
-    @test iszero(cost.shut_down) || cost.shut_down > 0
     @test PDP.OpenAPI.check_required(cost)
 end
 

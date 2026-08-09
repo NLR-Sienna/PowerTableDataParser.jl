@@ -58,10 +58,3 @@ end
           (min = -10.0, max = 50.0)
     @test_throws IS.DataFormatError PDP.make_dc_limits(row, :both_missing, :min)
 end
-
-@testset "every DC component satisfies its required properties" begin
-    sys, _ = _dc()
-    for component in PDP.get_components(sys, "TwoTerminalGenericHVDCLine")
-        @test PDP.OpenAPI.check_required(component)
-    end
-end

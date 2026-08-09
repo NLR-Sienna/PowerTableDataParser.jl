@@ -90,7 +90,7 @@
             PDP.get_supplemental_attributes(sys, "GeometricDistributionForcedOutage"),
         ) == 214
         @test length(PDP.get_supplemental_attributes(sys, "GeographicInfo")) == 73
-        # D10: the unified table also carries the 510 service-membership rows below, so the
+        # The unified table also carries the 510 service-membership rows below, so the
         # 623 plain attribute associations are counted by filtering on attribute_type.
         plain_attribute_types =
             Set(["EmissionsData", "GeometricDistributionForcedOutage", "GeographicInfo"])
@@ -103,7 +103,7 @@
     end
 
     @testset "ext survives emission, not just the in-memory container" begin
-        # R2: serialize.jl used to hardcode "ext" => Dict{String,Any}() on write, silently
+        # serialize.jl used to hardcode "ext" => Dict{String,Any}() on write, silently
         # dropping every extra column. This checks the EMITTED document, not sys, so that
         # drop can never come back unnoticed.
         reg = PDP.get_registry(sys)
@@ -131,7 +131,7 @@
 
     @testset "reserve membership is rows, not a component property" begin
         # Reserve-to-device contribution is many-to-many, so it is emitted as rows in the
-        # unified supplemental_attribute_associations table (D10) rather than a field on
+        # unified supplemental_attribute_associations table rather than a field on
         # the reserve.
         reserve = first(PDP.get_components(sys, "OnlineReserve"))
         @test !hasproperty(reserve, :contributing_devices)

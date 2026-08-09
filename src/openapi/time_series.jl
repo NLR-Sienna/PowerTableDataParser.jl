@@ -2,7 +2,7 @@
 # CSV readers, and are recorded as TimeSeriesAssociation rows. The values
 # themselves go to an HDF5 sidecar written by `write_time_series`.
 #
-# One association per owner (design D10). RTS points every series at two
+# One association per owner. RTS points every series at two
 # resolutions, and resolution is part of a series' identity in IS4, so the pairs
 # are not deduplicated on (owner, name). A series stated for a zone gains one row
 # per load underneath it, all against the same series — see `series_owners`.

@@ -1,6 +1,6 @@
 # Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:238-302.
 #
-# Divergence from PSCB (design D9): a transformer emits two components. The
+# Divergence from PSCB: a transformer emits two components. The
 # electrical parameters and the arc live on a `TransformerCircuit`, which the
 # `TwoWindingTransformer` references by id. The circuit carries no name.
 
@@ -52,19 +52,14 @@ columns, so the alternative is leaving the range unset and losing it entirely.
 const DEFAULT_TAP_CONTROL_BAND = (min = 0.9, max = 1.1)
 
 """
-Voltage a transformer holds at, in pu, when the tables state no other target.
+Voltage band a transformer holds to, in pu, when the tables state no other target.
 
 PSS/E states the controlled quantity as a band (VMA/VMI) rather than a setpoint,
-and a setpoint is the band whose ends coincide: hold this value exactly. Nothing
-achieves that in practice, but it is what a setpoint asks for, and it is how a
-target survives into a model that only speaks in bands.
+and a setpoint is the band whose ends coincide: hold nominal voltage exactly.
+Nothing achieves that in practice, but it is what a setpoint asks for, and it is
+how a target survives into a model that only speaks in bands.
 """
-const NOMINAL_VOLTAGE_SETPOINT = 1.0
-
-"""The controlled-quantity band that expresses a single voltage target."""
-function voltage_setpoint_band(setpoint::Float64)
-    return (min = setpoint, max = setpoint)
-end
+const NOMINAL_VOLTAGE_BAND = (min = 1.0, max = 1.0)
 
 """Assign a property the data may not state."""
 function _set_optional!(component, prop::Symbol, value, unit::AbstractString)
@@ -122,12 +117,7 @@ function _add_transformer!(sys::OpenAPISystem, branch, arc::Int, from_kv, to_kv)
     # control_objective sets the unit of both bands, so it is assigned first.
     set_value!(circuit, :control_objective, "FIXED")
     set_value!(circuit, :control_limits, DEFAULT_TAP_CONTROL_BAND, "1")
-    set_value!(
-        circuit,
-        :controlled_quantity_limits,
-        voltage_setpoint_band(NOMINAL_VOLTAGE_SETPOINT),
-        "pu",
-    )
+    set_value!(circuit, :controlled_quantity_limits, NOMINAL_VOLTAGE_BAND, "pu")
     set_value!(circuit, :active_power_flow, branch.active_power_flow, "MW")
     set_value!(circuit, :reactive_power_flow, branch.reactive_power_flow, "MVAr")
     set_value!(circuit, :base_power, get_base_power(sys), "MVA")

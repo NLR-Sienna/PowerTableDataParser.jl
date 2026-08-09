@@ -55,7 +55,7 @@ function loadzone_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
         set_value!(component, :name, zone)
         set_value!(component, :peak_active_power, active, "MW")
         set_value!(component, :peak_reactive_power, reactive, "MVAr")
-        # No device base of its own: base_power records the system base (D-C).
+        # No device base of its own: base_power records the system base.
         set_value!(component, :base_power, get_base_power(sys), "MVA")
         add_component!(sys, component)
     end
@@ -80,7 +80,7 @@ function _ensure_area!(sys::OpenAPISystem, name::AbstractString, peaks)
     set_value!(area, :name, name)
     set_value!(area, :peak_active_power, active, "MW")
     set_value!(area, :peak_reactive_power, reactive, "MVAr")
-    # No device base of its own: base_power records the system base (D-C).
+    # No device base of its own: base_power records the system base.
     set_value!(area, :base_power, get_base_power(sys), "MVA")
     add_component!(sys, area)
     return id

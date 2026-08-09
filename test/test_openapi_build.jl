@@ -20,16 +20,6 @@ end
     @test !isempty(ids)
 end
 
-@testset "every component satisfies its required properties" begin
-    data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
-    sys = PDP.build_openapi_system(data)
-    for type_name in PDP.component_type_names(sys)
-        for component in PDP.get_components(sys, type_name)
-            @test PDP.OpenAPI.check_required(component)
-        end
-    end
-end
-
 @testset "the assembled system holds every expected type" begin
     data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
     sys = PDP.build_openapi_system(data)

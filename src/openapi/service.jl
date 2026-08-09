@@ -1,8 +1,8 @@
 # Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:534-655.
 #
 # Reserve-to-device contribution is a many-to-many relation, emitted as rows in the unified
-# `supplemental_attribute_associations` table (D10; one row per pair, `attribute_type` naming
-# the service's own type). PSCB resolves it against a built `System`; here it is resolved
+# `supplemental_attribute_associations` table: one row per pair, `attribute_type` naming
+# the service's own type. PSCB resolves it against a built `System`; here it is resolved
 # against the tables and the id registry, which is why the eligibility rules are re-evaluated
 # rather than read off components.
 
@@ -110,7 +110,6 @@ function _add_reserve_membership!(
     data::PowerSystemTableData,
     reserve,
     service_id::Int,
-    attribute_type::AbstractString,
 )
     reg = get_registry(sys)
     device_types = category_to_type_names("Generator")
@@ -121,7 +120,7 @@ function _add_reserve_membership!(
         for device_name in named_devices
             entity_id =
                 _contributing_device_id(reg, device_types, device_name, reserve.name)
-            add_service_association!(sys, service_id, entity_id, attribute_type)
+            add_service_association!(sys, service_id, entity_id, "OnlineReserve")
         end
         return
     end
@@ -135,19 +134,15 @@ function _add_reserve_membership!(
             continue
         end
         entity_id = _contributing_device_id(reg, device_types, gen.name, reserve.name)
-        add_service_association!(sys, service_id, entity_id, attribute_type)
+        add_service_association!(sys, service_id, entity_id, "OnlineReserve")
     end
     return
 end
 
-"""Type name emitted for every reserve `_add_reserve!` builds. A named constant rather than a
-literal at each call site, since every reserve this parser emits is one `PO.OnlineReserve`."""
-const RESERVE_ATTRIBUTE_TYPE = "OnlineReserve"
-
 function services_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
     for reserve in iterate_rows(data, InputCategory.RESERVE; per_unit = uses_per_unit(sys))
         service_id = _add_reserve!(sys, reserve)
-        _add_reserve_membership!(sys, data, reserve, service_id, RESERVE_ATTRIBUTE_TYPE)
+        _add_reserve_membership!(sys, data, reserve, service_id)
     end
     return
 end

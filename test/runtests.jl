@@ -22,13 +22,10 @@ Aqua.test_deps_compat(PowerTableDataParser)
 
 const DATA_DIR =
     joinpath(LazyArtifacts.artifact"CaseData", "PowerSystemsTestData-5.0-dev3")
-const BAD_DATA = joinpath(DATA_DIR, "bad_data_for_tests")
 const RTS_GMLC_DIR = joinpath(DATA_DIR, "RTS_GMLC")
 # PTDP ships its own copy: the fixture's descriptor points base_mva at
 # MATPOWER BaseMVA, which is 100.0 for every generator.
 const DESCRIPTORS = joinpath(@__DIR__, "descriptors", "rts_user_descriptors.yaml")
-
-include("rts_loading_utils.jl")
 
 LOG_FILE = "table-parser-test.log"
 LOG_LEVELS = Dict(
