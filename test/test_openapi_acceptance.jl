@@ -131,14 +131,9 @@
 
     @testset "reserve membership is rows, not a component property" begin
         # Reserve-to-device contribution is many-to-many, so it is emitted as rows in the
-        # unified supplemental_attribute_associations table rather than a field on
-        # the reserve.
+        # dedicated service_associations table rather than a field on the reserve.
         reserve = first(PDP.get_components(sys, "OnlineReserve"))
         @test !hasproperty(reserve, :contributing_devices)
-        service_rows = count(
-            row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
-            PDP.get_supplemental_attribute_associations(sys),
-        )
-        @test service_rows == 510
+        @test length(PDP.get_service_associations(sys)) == 510
     end
 end

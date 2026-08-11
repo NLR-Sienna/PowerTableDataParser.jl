@@ -49,20 +49,16 @@ end
     @test PDP.get_value(reserves["Reg_Down"], :time_frame) ≈ 5.0
 end
 
-@testset "membership is normalized into unified association rows" begin
+@testset "membership is normalized into dedicated association rows" begin
     sys, _ = _services()
     # The reserve-to-device link is many-to-many, so it is rows rather than a field on
     # either side: the component carries no `contributing_devices`.
     reserve = first(PDP.get_components(sys, "OnlineReserve"))
     @test !hasproperty(reserve, :contributing_devices)
 
-    # Service membership is one attribute_type among the rows in the unified
-    # supplemental_attribute_associations table (D10) — filtered by attribute_type rather
-    # than read off a dedicated table.
-    service_rows = filter(
-        row -> PDP.get_value(row, :attribute_type) == "OnlineReserve",
-        PDP.get_supplemental_attribute_associations(sys),
-    )
+    # Service membership is a ServiceAssociation row, in its own table rather than
+    # filtered out of the plain-attribute one.
+    service_rows = PDP.get_service_associations(sys)
     @test !isempty(service_rows)
     reserve_ids = Set(
         PDP.get_value(r, :id) for r in PDP.get_components(sys, "OnlineReserve")
@@ -70,7 +66,7 @@ end
     # Every row points at a reserve, and no pair repeats.
     pairs = Set{Tuple{Int, Int}}()
     for row in service_rows
-        service_id = PDP.get_value(row, :attribute_id)
+        service_id = PDP.get_value(row, :service_id)
         @test service_id in reserve_ids
         pair = (service_id, PDP.get_value(row, :entity_id))
         @test !(pair in pairs)
@@ -81,7 +77,7 @@ end
     # generator set as any one system-wide product.
     by_service = Dict{Int, Int}()
     for row in service_rows
-        id = PDP.get_value(row, :attribute_id)
+        id = PDP.get_value(row, :service_id)
         by_service[id] = get(by_service, id, 0) + 1
     end
     named = Dict(

@@ -44,6 +44,7 @@ get_document(sys::OpenAPISystem) = sys.document
 
 get_supplemental_attribute_associations(sys::OpenAPISystem) =
     get_document(sys).supplemental_attribute_associations
+get_service_associations(sys::OpenAPISystem) = get_document(sys).service_associations
 get_time_series_associations(sys::OpenAPISystem) =
     get_document(sys).time_series_associations
 
@@ -80,9 +81,9 @@ end
 """
 Record a supplemental attribute and the entity it describes.
 
-Neither `group_index` nor `role` applies to anything this parser emits: it has no
-plant-family attributes, and reserve membership goes through
-`add_service_association!` below.
+Neither plant-family groupings nor service memberships apply to anything this parser
+emits: it has no plant-family attributes, and reserve membership goes through
+`add_service_association!` below, which uses its own table.
 """
 function add_supplemental_attribute!(
     sys::OpenAPISystem,
@@ -96,15 +97,9 @@ end
 """
 Record that `entity_id` contributes to the service `service_id`.
 
-A service membership is a row in the same unified `supplemental_attribute_associations`
-table as every other attribute link: `service_id` is emitted as `attribute_id` and
-`attribute_type` names the service's own type, so a reader distinguishes a membership row
-from a plain attribute by looking `attribute_id` up as a component rather than by any field
-here. Neither `group_index` nor `role` applies to a membership row.
-
-There is no attribute object to hand `PC.add_supplemental_attribute!` — the "attribute"
-is a component that already exists — so the row is appended directly; `PC.validate_document`
-resolves `attribute_id` against components and attributes together.
+A service membership is a row in the dedicated `service_associations` table: `entity_id`
+may name a Device, a Branch, or another Service, so no member-type discriminator is
+needed.
 
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
@@ -115,11 +110,10 @@ function add_service_association!(
     sys::OpenAPISystem,
     service_id::Int,
     entity_id::Int,
-    attribute_type::AbstractString,
 )
-    associations = get_supplemental_attribute_associations(sys)
+    associations = get_service_associations(sys)
     for existing in associations
-        if get_value(existing, :attribute_id) == service_id &&
+        if get_value(existing, :service_id) == service_id &&
            get_value(existing, :entity_id) == entity_id
             throw(
                 IS.DataFormatError(
@@ -130,11 +124,7 @@ function add_service_association!(
     end
     push!(
         associations,
-        PC.SupplementalAttributeAssociation(;
-            attribute_id = service_id,
-            entity_id = entity_id,
-            attribute_type = String(attribute_type),
-        ),
+        PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
     )
     return
 end
