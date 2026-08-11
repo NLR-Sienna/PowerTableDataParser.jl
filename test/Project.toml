@@ -27,5 +27,8 @@ InfrastructureSystems = {path = "../../InfrastructureSystems.jl"}
 PowerCoreOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
 PowerOperationsOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
 
+[sources]
+InfrastructureSystems = {url = "https://github.com/NREL-Sienna/InfrastructureSystems.jl", rev = "feat/rust-time-series-store"}
+
 [compat]
 julia = "^1.6"
