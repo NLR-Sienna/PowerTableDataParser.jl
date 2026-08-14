@@ -37,7 +37,10 @@ end
     # Every RTS pointer entry declares a scaling_factor_multiplier, so every
     # series stores normalized values tagged with the device-base units label
     # in place of the removed multiplier metadata.
-    @test all(IS.get_units(row.series) == PDP.DEVICE_BASE_UNITS for row in sys.time_series)
+    @test all(
+        IS.get_unit_system(row.series) == PDP.DEVICE_BASE_UNIT_SYSTEM
+        for row in sys.time_series
+    )
     zone_rows = [r for r in sys.time_series if r.owner_type == "LoadZone"]
     # Normalized by the zone peak: per-unit values, nothing above 1.
     for row in zone_rows
@@ -115,7 +118,7 @@ end
     reserve_rows = [r for r in sys.time_series if r.owner_type == "OnlineReserve"]
     @test length(reserve_rows) == 12
     @test all(r -> IS.get_name(r.series) == "requirement", reserve_rows)
-    @test all(r -> IS.get_units(r.series) == PDP.DEVICE_BASE_UNITS, reserve_rows)
+    @test all(r -> IS.get_unit_system(r.series) == PDP.DEVICE_BASE_UNIT_SYSTEM, reserve_rows)
 end
 
 @testset "write_time_series persists the catalog and dedups arrays" begin
@@ -138,8 +141,9 @@ end
             staged_arrays = Set(IS.get_array(row.series) for row in sys.time_series)
             @test length(Set(m.data_hash for m in metadata)) == length(staged_arrays)
 
-            # The device-base units label survives the round trip.
-            @test all(m.units == PDP.DEVICE_BASE_UNITS for m in metadata)
+            # The device-base declaration survives the round trip. It rides on unit_system,
+            # not the units label: a per-unit basis is not a unit.
+            @test all(m.unit_system == InfraStore.ComponentBase for m in metadata)
 
             # A full value round trip for one association.
             row = first(r for r in sys.time_series if r.owner_type == "OnlineReserve")

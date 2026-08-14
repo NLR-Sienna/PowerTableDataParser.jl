@@ -46,15 +46,17 @@ function category_to_type_names(category::AbstractString)
 end
 
 """
-Units label for values stored per unit of the owning component's own base
-quantity for the named attribute.
+The unit system values are stored in when a pointer declared a multiplier.
 
-The legacy `scaling_factor_multiplier` concept is replaced by this: a pointer
-that declared a multiplier stores its values normalized, and the label tells the
-reader to scale by the owner's corresponding base quantity (e.g. its max active
-power for a `max_active_power` series) instead of naming an accessor.
+The legacy `scaling_factor_multiplier` concept is replaced by this: such a pointer stores its
+values normalized against the owner's corresponding base quantity (e.g. its max active power
+for a `max_active_power` series), which is exactly what `DeviceBaseUnit` declares — so the
+reader scales by that base rather than resolving an accessor name.
+
+This was carried in the series' `units` label until InfraStore grew a real `unit_system`
+column. `units` is for a units label ("MW"); a per-unit basis is not one.
 """
-const DEVICE_BASE_UNITS = "DEVICE_BASE"
+const DEVICE_BASE_UNIT_SYSTEM = IS.DU
 
 """
 One entry of a time series pointer file.
@@ -209,8 +211,11 @@ function _normalized(values::Vector{Float64}, factor::AbstractString)
     return values ./ maximum(values)
 end
 
-_series_units(entry::TimeSeriesPointer) =
-    isnothing(entry.scaling_factor_multiplier) ? nothing : DEVICE_BASE_UNITS
+"""The basis a pointer's values are stored in. `nothing` when it declared no multiplier:
+the values are then as the source file gave them, and no basis was declared — which is
+deliberately not the same as declaring natural units."""
+_series_unit_system(entry::TimeSeriesPointer) =
+    isnothing(entry.scaling_factor_multiplier) ? nothing : DEVICE_BASE_UNIT_SYSTEM
 
 """
 Read every series the pointer file names and stage one row per owner.
@@ -247,7 +252,7 @@ function add_time_series!(sys::OpenAPISystem, metadata_file::AbstractString)
             initial_timestamp,
             entry.resolution,
             _normalized(values, entry.normalization_factor);
-            units = _series_units(entry),
+            unit_system = _series_unit_system(entry),
         )
         for (target_type, target_id) in series_owners(sys, entry, owner_type, owner_id)
             push!(sys.time_series, StagedTimeSeries(target_type, target_id, series))
@@ -287,4 +292,64 @@ function write_time_series(sys::OpenAPISystem, path::AbstractString)
         IS.close!(store)
     end
     return
+end
+
+# ── document rows ──────────────────────────────────────────────────────────────
+
+"""ISO 8601 duration, the spelling `TimeSeriesAssociation.resolution` takes."""
+_iso8601_duration(period::Dates.Period) =
+    string("PT", Dates.value(Dates.Second(period)), "S")
+
+"""The document's spelling for a series' declared basis. `nothing` stays `nothing`:
+unspecified is deliberately not `NATURAL_UNITS`."""
+_document_unit_system(::Nothing) = nothing
+_document_unit_system(::IS.NaturalUnit) = "NATURAL_UNITS"
+_document_unit_system(::IS.DeviceBaseUnit) = "DEVICE_BASE"
+_document_unit_system(::IS.SystemBaseUnit) = throw(
+    IS.DataFormatError(
+        "a staged series declares the system-base unit system, which the document cannot " *
+        "express — the schemas offer NATURAL_UNITS and DEVICE_BASE only",
+    ),
+)
+
+"""
+One `TimeSeriesAssociation` row per staged series.
+
+The sidecar holds the values; these rows let a consumer see what a document's bundle
+contains — and in what units, on what basis — without opening the store. Keyed the way the
+store keys its own catalog, so the two describe the same series.
+
+Every staged series is a `SingleTimeSeries` against a component, so `time_series_type` and
+`owner_category` are fixed and `features` is empty: this parser emits no forecasts and no
+feature-discriminated series.
+"""
+function time_series_rows(sys::OpenAPISystem)
+    doc = get_document(sys)
+    rows = PC.TimeSeriesAssociation[]
+    for staged in sys.time_series
+        series = staged.series
+        push!(
+            rows,
+            PC.TimeSeriesAssociation(;
+                id = PC.next_id!(doc),
+                time_series_type = "SingleTimeSeries",
+                initial_timestamp = PC.ZonedDateTime(
+                    IS.get_initial_timestamp(series), PC.TimeZone("UTC"),
+                ),
+                resolution = _iso8601_duration(IS.get_resolution(series)),
+                length = length(series),
+                name = IS.get_name(series),
+                owner_id = staged.owner_id,
+                owner_type = staged.owner_type,
+                owner_category = "Component",
+                features = Dict{String, PC.FeatureValue}[],
+                units = IS.get_units(series),
+                # The document spells this `quantity_type`; IS and InfraStore spell the same
+                # field `quantity_kind`. One name should win; until then this is the bridge.
+                quantity_type = IS.get_quantity_kind(series),
+                unit_system = _document_unit_system(IS.get_unit_system(series)),
+            ),
+        )
+    end
+    return rows
 end

@@ -100,7 +100,9 @@ end
             doc = JSON.parse(read(path, String))
             @test doc["unit_system"] == unit_system
             @test length(doc["components"]["ACBus"]) == 73
-            @test isempty(get(doc, "time_series_associations", []))
+            # The rows ride in both conventions; the document's own unit_system governs
+            # component values, while each row states the basis of its series.
+            @test length(doc["time_series_associations"]) == 362
         end
     end
 end

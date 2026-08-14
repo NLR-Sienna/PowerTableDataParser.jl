@@ -53,8 +53,20 @@ end
     @test doc["base_power"] == 100.0
     @test doc["time_series_storage_file"] == "rts_time_series_storage.h5"
     @test length(doc["components"]["ACBus"]) == 73
-    # Associations live in the store's catalog now, not the document.
-    @test isempty(get(doc, "time_series_associations", []))
+    # One row per staged series. The sidecar holds the values; these rows let a consumer see
+    # what the bundle contains, and on what basis, without opening the store.
+    rows = doc["time_series_associations"]
+    @test length(rows) == 362
+    row = first(rows)
+    @test row["time_series_type"] == "SingleTimeSeries"
+    @test row["owner_category"] == "Component"
+    @test row["unit_system"] == "DEVICE_BASE"
+    @test !isempty(row["name"])
+    # Every row points at a component the document declares.
+    component_ids = Set(
+        c["id"] for (_type, bucket) in doc["components"] for c in bucket
+    )
+    @test all(r -> r["owner_id"] in component_ids, rows)
     @test haskey(doc, "supplemental_attributes")
     @test haskey(doc, "supplemental_attribute_associations")
 end

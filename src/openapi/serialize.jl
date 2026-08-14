@@ -51,6 +51,11 @@ function to_json(
         end
         write_time_series(sys, ts_path)
     end
+    # Rebuilt rather than appended, so a second `to_json` on the same system does not stack a
+    # duplicate set of rows.
+    associations = get_document(sys).time_series_associations
+    empty!(associations)
+    append!(associations, time_series_rows(sys))
     document = _document_for_write(get_document(sys), ts_basename)
     PC.write_document(document, filename; pretty = pretty, force = force)
     if isnothing(ts_basename)
