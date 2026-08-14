@@ -1,19 +1,32 @@
 """
+One series against the component that owns it, staged for the time series store.
+
+A fanned-out series shares one `series` object across its owners; the store
+dedups the array by content hash, so it lands once regardless.
+"""
+struct StagedTimeSeries
+    owner_type::String
+    owner_id::Int
+    series::IS.SingleTimeSeries
+end
+
+"""
 The document PTDP emits, as a thin wrapper over `PC.SystemDocument`.
 
-`document` is the only serialized artifact: components, the association tables,
-`ext` and the unit convention all live on it.
+`document` carries the components, the supplemental-attribute association table,
+`ext` and the unit convention.
 
 `registry` is build-time scaffolding and is not serialized: it keeps the lookup
 indices (by name, by bus number, by arc) the document has no use for once built.
 
-`time_series` is the payload written to the HDF5 sidecar; `document` carries
-only the `TimeSeriesAssociation` rows pointing at it.
+`time_series` is the payload written to the InfraStore sidecar pair by
+`write_time_series`; the store's own catalog is the association table, so the
+document only names the store file.
 """
 struct OpenAPISystem
     document::PC.SystemDocument
     registry::IdRegistry
-    time_series::Vector{IS.TimeSeriesData}
+    time_series::Vector{StagedTimeSeries}
 end
 
 """
@@ -37,15 +50,13 @@ function OpenAPISystem(
         )
     end
     document = PC.SystemDocument(base_power; unit_system = unit_system)
-    return OpenAPISystem(document, IdRegistry(document), Vector{IS.TimeSeriesData}())
+    return OpenAPISystem(document, IdRegistry(document), Vector{StagedTimeSeries}())
 end
 
 get_document(sys::OpenAPISystem) = sys.document
 
 get_supplemental_attribute_associations(sys::OpenAPISystem) =
     get_document(sys).supplemental_attribute_associations
-get_time_series_associations(sys::OpenAPISystem) =
-    get_document(sys).time_series_associations
 
 """Record the table columns the data model has no field for, against a component."""
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
@@ -80,8 +91,8 @@ end
 """
 Record a supplemental attribute and the entity it describes.
 
-Neither `group_index` nor `role` applies to anything this parser emits: it has no
-plant-family attributes, and reserve membership goes through
+This parser emits no plant-family attributes, so it never writes a `plant_associations` or
+`combined_cycle_associations` row; reserve membership goes through
 `add_service_association!` below.
 """
 function add_supplemental_attribute!(
@@ -96,30 +107,21 @@ end
 """
 Record that `entity_id` contributes to the service `service_id`.
 
-A service membership is a row in the same unified `supplemental_attribute_associations`
-table as every other attribute link: `service_id` is emitted as `attribute_id` and
-`attribute_type` names the service's own type, so a reader distinguishes a membership row
-from a plain attribute by looking `attribute_id` up as a component rather than by any field
-here. Neither `group_index` nor `role` applies to a membership row.
-
-There is no attribute object to hand `PC.add_supplemental_attribute!` — the "attribute"
-is a component that already exists — so the row is appended directly; `PC.validate_document`
-resolves `attribute_id` against components and attributes together.
+A service membership is a row in its own `service_associations` table, not in
+`supplemental_attribute_associations`: a service is a component rather than a supplemental
+attribute, so the two ends of the link resolve against different id sets and the document
+validates each accordingly. The service's own type is already on the component, so no
+`attribute_type` discriminator is needed here.
 
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
 device can match one reserve twice, and silently collapsing that would hide a malformed
 rule set.
 """
-function add_service_association!(
-    sys::OpenAPISystem,
-    service_id::Int,
-    entity_id::Int,
-    attribute_type::AbstractString,
-)
-    associations = get_supplemental_attribute_associations(sys)
-    for existing in associations
-        if get_value(existing, :attribute_id) == service_id &&
+function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id::Int)
+    doc = get_document(sys)
+    for existing in doc.service_associations
+        if get_value(existing, :service_id) == service_id &&
            get_value(existing, :entity_id) == entity_id
             throw(
                 IS.DataFormatError(
@@ -128,13 +130,9 @@ function add_service_association!(
             )
         end
     end
-    push!(
-        associations,
-        PC.SupplementalAttributeAssociation(;
-            attribute_id = service_id,
-            entity_id = entity_id,
-            attribute_type = String(attribute_type),
-        ),
+    PC.add_service_association!(
+        doc,
+        PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
     )
     return
 end

@@ -120,7 +120,7 @@ function _add_reserve_membership!(
         for device_name in named_devices
             entity_id =
                 _contributing_device_id(reg, device_types, device_name, reserve.name)
-            add_service_association!(sys, service_id, entity_id, "OnlineReserve")
+            add_service_association!(sys, service_id, entity_id)
         end
         return
     end
@@ -134,7 +134,7 @@ function _add_reserve_membership!(
             continue
         end
         entity_id = _contributing_device_id(reg, device_types, gen.name, reserve.name)
-        add_service_association!(sys, service_id, entity_id, "OnlineReserve")
+        add_service_association!(sys, service_id, entity_id)
     end
     return
 end

@@ -100,7 +100,7 @@ end
             doc = JSON.parse(read(path, String))
             @test doc["unit_system"] == unit_system
             @test length(doc["components"]["ACBus"]) == 73
-            @test length(doc["time_series_associations"]) == 362
+            @test isempty(get(doc, "time_series_associations", []))
         end
     end
 end
@@ -116,6 +116,5 @@ end
         @test [PDP.get_value(c, :id) for c in left] ==
               [PDP.get_value(c, :id) for c in right]
     end
-    @test length(PDP.get_time_series_associations(natural)) ==
-          length(PDP.get_time_series_associations(per_unit))
+    @test length(natural.time_series) == length(per_unit.time_series)
 end

@@ -1,11 +1,12 @@
-# Time series come from the pointer file, are read through InfrastructureSystems'
-# CSV readers, and are recorded as TimeSeriesAssociation rows. The values
-# themselves go to an HDF5 sidecar written by `write_time_series`.
+# Time series come from the pointer file, are read straight off the source CSVs,
+# and are staged as `StagedTimeSeries` rows — one per owner. `write_time_series`
+# hands them to InfrastructureSystems' time series store, whose catalog is the
+# association table; the document carries no association rows of its own.
 #
-# One association per owner. RTS points every series at two
-# resolutions, and resolution is part of a series' identity in IS4, so the pairs
-# are not deduplicated on (owner, name). A series stated for a zone gains one row
-# per load underneath it, all against the same series — see `series_owners`.
+# One row per owner. RTS points every series at two resolutions, and resolution
+# is part of a series' identity in the store, so the pairs are not deduplicated
+# on (owner, name). A series stated for a zone gains one row per load underneath
+# it, all against the same series — see `series_owners`.
 
 """
 Component types a pointer file's `category` may name.
@@ -44,10 +45,16 @@ function category_to_type_names(category::AbstractString)
     return CATEGORY_TO_TYPES[key]
 end
 
-"""ISO 8601 duration, which is how the schemas state a resolution."""
-function _iso_duration(period::Dates.Period)
-    return string("PT", Dates.value(Dates.Second(period)), "S")
-end
+"""
+Units label for values stored per unit of the owning component's own base
+quantity for the named attribute.
+
+The legacy `scaling_factor_multiplier` concept is replaced by this: a pointer
+that declared a multiplier stores its values normalized, and the label tells the
+reader to scale by the owner's corresponding base quantity (e.g. its max active
+power for a `max_active_power` series) instead of naming an accessor.
+"""
+const DEVICE_BASE_UNITS = "DEVICE_BASE"
 
 """
 One entry of a time series pointer file.
@@ -157,14 +164,13 @@ function _loads_under(sys::OpenAPISystem, owner_type::AbstractString, owner_id::
 end
 
 """
-Every owner a pointer entry produces, with the multiplier each one applies.
+Every owner a pointer entry produces.
 
 Usually the entry names its owner directly. A load series stated for a zone or an
-area is different: the values describe the loads underneath, so PowerSystems
-attaches that one series to each of them and keeps a copy on the aggregation
-under its own accessor — `peak_active_power` rather than `max_active_power`. The
-association table expresses that directly, one row per owner against a single
-series, so nothing is duplicated in the HDF5 sidecar.
+area is different: the normalized values describe the loads underneath, so each of
+them gets a row against the same series, and the aggregation keeps a row of its
+own. With the values stored per unit (`DEVICE_BASE`), no per-owner scaling
+metadata is needed: every owner scales by its own base quantity.
 """
 function series_owners(
     sys::OpenAPISystem,
@@ -176,103 +182,109 @@ function series_owners(
     if !haskey(AGGREGATION_BUS_PROPERTIES, owner_type) ||
        isnothing(multiplier) ||
        !(multiplier in FANNED_OUT_MULTIPLIERS)
-        return [(owner_type, owner_id, multiplier)]
+        return [(owner_type, owner_id)]
     end
 
-    owners = Tuple{String, Int, Union{Nothing, String}}[
-        (type_name, id, multiplier) for
-        (type_name, id) in _loads_under(sys, owner_type, owner_id)
-    ]
-    push!(owners, (owner_type, owner_id, replace(multiplier, "max" => "peak")))
+    owners = _loads_under(sys, owner_type, owner_id)
+    push!(owners, (owner_type, owner_id))
     return owners
 end
 
-function _scaling_factor_multiplier!(association, multiplier::AbstractString)
-    set_value!(association, :scaling_factor_multiplier, String(multiplier))
-    return
+"""
+Apply the pointer's normalization: `"max"` divides by the series' own peak, a
+number divides by itself. Matches the semantics the removed
+InfrastructureSystems file ingestion applied.
+"""
+function _normalized(values::Vector{Float64}, factor::Float64)
+    if factor == 0.0
+        throw(IS.DataFormatError("normalization_factor cannot be zero"))
+    end
+    return factor == 1.0 ? values : values ./ factor
 end
 
-function _scaling_factor_multiplier!(association, ::Nothing)
-    return
+function _normalized(values::Vector{Float64}, factor::AbstractString)
+    if lowercase(factor) != "max"
+        throw(IS.DataFormatError("unsupported normalization_factor=$factor"))
+    end
+    return values ./ maximum(values)
 end
+
+_series_units(entry::TimeSeriesPointer) =
+    isnothing(entry.scaling_factor_multiplier) ? nothing : DEVICE_BASE_UNITS
 
 """
-Read every series the pointer file names and record its association.
+Read every series the pointer file names and stage one row per owner.
 
-The reader returns every column of the source CSV, so the column for this entry's
-component is selected explicitly.
+The source CSV holds every component's column, so the column for this entry's
+component is selected explicitly; a file is read once and shared by its entries.
 """
 function add_time_series!(sys::OpenAPISystem, metadata_file::AbstractString)
     reg = get_registry(sys)
+    csv_cache = Dict{String, DataFrames.DataFrame}()
     for entry in read_time_series_pointers(metadata_file)
         owner_type, owner_id = find_by_name(
             reg,
             category_to_type_names(entry.category),
             entry.component_name,
         )
-        raw = IS.read_time_series(
-            IS.SingleTimeSeries,
+        df = get!(
+            () -> CSV.read(entry.data_file, DataFrames.DataFrame),
+            csv_cache,
             entry.data_file,
-            entry.component_name,
         )
-        values = IS.make_time_array(raw, entry.component_name, entry.resolution)
+        parsed = read_pointer_csv_values(df, entry.component_name, entry.resolution)
+        if isnothing(parsed)
+            throw(
+                IS.DataFormatError(
+                    "$(entry.data_file) has no column for $(entry.component_name) " *
+                    "and is not period-pivoted",
+                ),
+            )
+        end
+        values, initial_timestamp = parsed
         series = IS.SingleTimeSeries(
             entry.name,
-            values;
-            normalization_factor = entry.normalization_factor,
+            initial_timestamp,
+            entry.resolution,
+            _normalized(values, entry.normalization_factor);
+            units = _series_units(entry),
         )
-        push!(sys.time_series, series)
-
-        for (target_type, target_id, multiplier) in
-            series_owners(sys, entry, owner_type, owner_id)
-            _add_association!(sys, entry, series, raw, target_type, target_id, multiplier)
+        for (target_type, target_id) in series_owners(sys, entry, owner_type, owner_id)
+            push!(sys.time_series, StagedTimeSeries(target_type, target_id, series))
         end
     end
     return
 end
 
-"""One row of the association table: this series, this owner."""
-function _add_association!(
-    sys::OpenAPISystem,
-    entry::TimeSeriesPointer,
-    series::IS.TimeSeriesData,
-    raw,
-    owner_type::AbstractString,
-    owner_id::Int,
-    multiplier,
-)
-    association = PC.TimeSeriesAssociation()
-    set_value!(association, :id, length(get_time_series_associations(sys)) + 1)
-    set_value!(association, :time_series_uuid, string(IS.get_uuid(series)))
-    set_value!(association, :time_series_type, "SingleTimeSeries")
-    set_value!(
-        association,
-        :initial_timestamp,
-        TimeZones.ZonedDateTime(raw.initial_time, TimeZones.tz"UTC"),
-    )
-    set_value!(association, :resolution, _iso_duration(entry.resolution))
-    set_value!(association, :length, length(series))
-    set_value!(association, :name, entry.name)
-    set_value!(association, :owner_id, owner_id)
-    set_value!(association, :owner_type, owner_type)
-    set_value!(association, :owner_category, "Component")
-    set_value!(association, :features, Dict{String, PC.FeatureValue}[])
-    _scaling_factor_multiplier!(association, multiplier)
-    set_value!(association, :metadata_uuid, string(UUIDs.uuid4()))
-    PC.add_time_series_association!(get_document(sys), association)
-    return
-end
-
 """
-Write the series values to an HDF5 sidecar.
+Write the staged series to the store's sidecar pair: `path` (the arrays) and
+`path * ".sqlite"` (the catalog, which is the association table).
 
-The store keys on the series UUID, which is what keeps a group per series even
-when two entries share an owner and a name at different resolutions.
+Everything goes through InfrastructureSystems' store wrappers — the InfraStore
+backend is an implementation detail encapsulated there. The whole batch commits
+as one transaction, and the store dedups arrays by content hash — a fanned-out
+series lands once no matter how many owners reference it, and identical arrays
+from different entries collapse too.
 """
-function write_time_series(sys::OpenAPISystem, h5_path::AbstractString)
-    storage = IS.Hdf5TimeSeriesStorage(true; filename = String(h5_path))
-    for series in sys.time_series
-        IS.serialize_time_series!(storage, series)
+function write_time_series(sys::OpenAPISystem, path::AbstractString)
+    category = IS.get_owner_category(IS.InfrastructureSystemsComponent)
+    store = IS.Store(; in_memory = true)
+    try
+        batch = IS.make_add_batch()
+        for staged in sys.time_series
+            IS.serialize_single!(
+                batch,
+                staged.owner_id,
+                staged.owner_type,
+                category,
+                IS.get_name(staged.series),
+                staged.series,
+            )
+        end
+        IS.commit_batch!(store, batch)
+        IS.serialize(store, String(path))
+    finally
+        IS.close!(store)
     end
     return
 end

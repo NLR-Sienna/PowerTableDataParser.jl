@@ -17,8 +17,6 @@ import Dates
 import JSON
 import OpenAPI
 import SQLite
-import TimeZones
-import UUIDs
 import Unicode: normalize
 import YAML
 
@@ -38,6 +36,7 @@ const PO = PowerOperationsOpenAPIModels
 include("common.jl")
 include("enums.jl")
 include("power_system_table_data.jl")
+include("time_series_pointers.jl")
 include("openapi/accessors.jl")
 include("openapi/identity.jl")
 include("openapi/units.jl")

@@ -13,7 +13,8 @@ the descriptors' per-unit targets and so reproduces what PowerSystems stores.
 The choice is recorded in the emitted document.
 
 Time series are read when the data names a pointer file. The values are held in
-memory; `write_time_series` puts them in an HDF5 sidecar.
+memory; `write_time_series` puts them in an InfraStore sidecar pair whose
+catalog carries the owner associations.
 """
 function build_openapi_system(
     data::PowerSystemTableData;

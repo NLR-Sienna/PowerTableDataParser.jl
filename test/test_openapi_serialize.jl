@@ -16,13 +16,14 @@ end
     @test PDP.time_series_filename("/a/b/rts.json") == "rts_time_series_storage.h5"
 end
 
-@testset "to_json writes both files" begin
+@testset "to_json writes the document and the sidecar pair" begin
     sys = _rts_system()
     mktempdir() do dir
         path = joinpath(dir, "rts.json")
         PDP.to_json(sys, path)
         @test isfile(path)
         @test isfile(joinpath(dir, "rts_time_series_storage.h5"))
+        @test isfile(joinpath(dir, "rts_time_series_storage.h5.sqlite"))
     end
 end
 
@@ -52,7 +53,8 @@ end
     @test doc["base_power"] == 100.0
     @test doc["time_series_storage_file"] == "rts_time_series_storage.h5"
     @test length(doc["components"]["ACBus"]) == 73
-    @test length(doc["time_series_associations"]) == 362
+    # Associations live in the store's catalog now, not the document.
+    @test isempty(get(doc, "time_series_associations", []))
     @test haskey(doc, "supplemental_attributes")
     @test haskey(doc, "supplemental_attribute_associations")
 end
@@ -67,15 +69,6 @@ end
     @test cost["variable"]["variable_cost_type"] == "FUEL"
     @test cost["variable"]["value_curve"]["curve_type"] == "INCREMENTAL"
     @test cost["variable"]["value_curve"]["function_data"]["x_coords"] isa Vector
-end
-
-@testset "an association timestamp is an ISO 8601 string" begin
-    doc = _round_trip(_rts_system())
-    association = doc["time_series_associations"][1]
-    @test association["initial_timestamp"] isa String
-    @test occursin("T", association["initial_timestamp"])
-    @test endswith(association["initial_timestamp"], "+00:00")
-    @test association["resolution"] in ("PT3600S", "PT300S")
 end
 
 @testset "unset optional properties are omitted, not null" begin

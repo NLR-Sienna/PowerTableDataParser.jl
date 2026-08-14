@@ -19,8 +19,8 @@
         @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
         @test length(PDP.get_components(sys, "PowerLoad")) == 51
         @test length(PDP.get_components(sys, "OnlineReserve")) == 7
-        @test length(PDP.get_time_series_associations(sys)) == 362
-        @test length(sys.time_series) == 260
+        @test length(sys.time_series) == 362
+        @test length(Set(row.series for row in sys.time_series)) == 260
     end
 
     @testset "referential integrity" begin
@@ -44,8 +44,8 @@
         for gen in PDP.get_components(sys, "ThermalStandard")
             @test PDP.get_value(gen, :bus) in bus_ids
         end
-        for association in PDP.get_time_series_associations(sys)
-            @test PDP.get_value(association, :owner_id) in ids
+        for row in sys.time_series
+            @test row.owner_id in ids
         end
     end
 
@@ -55,30 +55,26 @@
                 @test OpenAPI.check_required(component)
             end
         end
-        for association in PDP.get_time_series_associations(sys)
-            @test OpenAPI.check_required(association)
-        end
     end
 
-    @testset "both files, both resolutions" begin
+    @testset "the sidecar pair, both resolutions" begin
         mktempdir() do dir
             path = joinpath(dir, "rts.json")
             PDP.to_json(sys, path; pretty = true)
-            h5 = joinpath(dir, "rts_time_series_storage.h5")
+            store_path = joinpath(dir, "rts_time_series_storage.h5")
             @test isfile(path)
-            @test isfile(h5)
-            uuids = Set(
-                PDP.get_value(a, :time_series_uuid) for
-                a in PDP.get_time_series_associations(sys)
-            )
-            HDF5.h5open(h5, "r") do f
-                @test length(keys(f["time_series"])) == length(uuids)
+            @test isfile(store_path)
+            @test isfile(store_path * ".sqlite")
+            store = InfraStore.open_store(store_path; read_only = true)
+            try
+                metadata = InfraStore.list_time_series(store)
+                @test length(metadata) == length(sys.time_series)
+                @test Set(m.resolution for m in metadata) == Set(
+                    Dates.Millisecond.([Dates.Hour(1), Dates.Minute(5)]),
+                )
+            finally
+                InfraStore.close!(store)
             end
-            resolutions = Set(
-                PDP.get_value(a, :resolution) for
-                a in PDP.get_time_series_associations(sys)
-            )
-            @test resolutions == Set(["PT3600S", "PT300S"])
         end
     end
 

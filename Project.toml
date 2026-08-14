@@ -14,17 +14,26 @@ OpenAPI = "d5e62ea6-ddf3-4d43-8e4c-ad5e6c8bfd7d"
 PowerCoreOpenAPIModels = "b7b40286-e793-417d-a9a0-b1583e4da1cb"
 PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
-TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
-UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+
+[weakdeps]
+PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
+TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
+
+[extensions]
+# Time series pointer-file ingestion into a live PSY System (the code formerly in
+# PowerSystemCaseBuilder). TimeSeries is a trigger only for its TimeArray type; it
+# always loads with PowerSystems, which depends on it.
+PowerTableDataParserPowerSystemsExt = ["PowerSystems", "TimeSeries"]
 
 [sources]
 # Sibling-checkout paths, not a git rev: the x-unit accessors these packages
 # expose are generated and not yet released. Switch to a tagged rev before merge.
 PowerCoreOpenAPIModels = {path = "../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
 PowerOperationsOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
-InfrastructureSystems = {url = "https://github.com/NREL-Sienna/InfrastructureSystems.jl", rev = "feat/rust-time-series-store"}
+# The working IS checkout for the rust-backed time series store.
+InfrastructureSystems = {path = "../IS3.jl"}
 
 [compat]
 CSV = "~0.10"
@@ -36,9 +45,9 @@ JSON = "1"
 OpenAPI = "0.2"
 PowerCoreOpenAPIModels = "0.1"
 PowerOperationsOpenAPIModels = "0.1"
+PowerSystems = "^5.10"
 SQLite = "^1.6"
-TimeZones = "1"
-UUIDs = "1"
+TimeSeries = "0.25"
 Unicode = "1"
 YAML = "~0.4"
 julia = "^1.10"

@@ -9,7 +9,7 @@ end
     sys = PDP.OpenAPISystem(100.0)
     @test PDP.get_base_power(sys) == 100.0
     @test isempty(PDP.component_type_names(sys))
-    @test isempty(PDP.get_time_series_associations(sys))
+    @test isempty(sys.time_series)
     @test isempty(PDP.get_document(sys).supplemental_attributes)
     @test isempty(PDP.get_supplemental_attribute_associations(sys))
 end

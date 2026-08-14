@@ -9,6 +9,14 @@ Standalone home for the CSV / tabular-data parser (CDM) that was historically in
 - `src/power_system_inputs.json` — the column descriptor file, a **copy of PSY's** kept here until
   PSY drops its version. The two can drift.
 - `src/enums.jl` — `InputCategory` scoped enum, mirrors PSY's.
+- `ext/PowerTableDataParserPowerSystemsExt.jl` — time series pointer-file ingestion into a
+  live `PSY.System` (`add_time_series_from_pointers!`), migrated from PowerSystemCaseBuilder.
+  A weakdep extension so the core package (and its OpenAPI path) stays PSY-free;
+  PSCB imports this package and calls it.
+- `[sources]` points InfrastructureSystems at `../IS3.jl`, the working checkout of the
+  rust-backed time series store branch. Its InfraStore backend is registered and stays
+  **encapsulated inside IS** — this package never imports it; tests reach the backend
+  reader via `IS.InfraStore` only to verify emitted store files independently.
 - `test/` uses the Sienna classic runner (`julia --project=test test/runtests.jl`); end-to-end
   parser tests use PSY's own struct, so they need PSY resolvable.
 
