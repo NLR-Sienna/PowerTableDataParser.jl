@@ -1,0 +1,13 @@
+# Reference environment: the released psy5 stack, deliberately isolated from the
+# package environment so it resolves the registered PowerSystems rather than the
+# psy6 checkout next door.
+[deps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+PowerSystemCaseBuilder = "f00506e0-b84f-492a-93c2-c0a9afc4364e"
+PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
+
+[compat]
+JSON = "0.21, 1"
+PowerSystemCaseBuilder = "2"
+PowerSystems = "5"
+julia = "^1.10"

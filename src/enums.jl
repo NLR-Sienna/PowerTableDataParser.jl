@@ -18,6 +18,8 @@ IS.@scoped_enum(
 
 const ENUMS = (
     InputCategory,
+    # _get_field_infos resolves the descriptors' unit_system strings through this.
+    IS.UnitSystem,
 )
 
 const ENUM_MAPPINGS = Dict()
@@ -29,7 +31,6 @@ for enum in ENUMS
     end
 end
 
-# get_enum_value used once in PowerSystemTableData(), but only with the enum type InputCategory
 """Get the enum value for the string. Case insensitive."""
 function get_enum_value(enum, value::AbstractString)
     if !haskey(ENUM_MAPPINGS, enum)
