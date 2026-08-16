@@ -167,21 +167,36 @@ _ts_values(component, name) =
         zone = PSY.get_component(PSY.LoadZone, sys, "Zone1")
         shunt = PSY.get_component(PSY.FixedAdmittance, sys, "shunt1")
 
-        # Direct entry stores the raw values; the duplicate entry is dropped.
+        # Direct entry: no multiplier, so the values are the device quantities the file
+        # states, nothing normalizes them and no basis is declared. The duplicate is dropped.
+        @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
+        direct = PSY.get_time_series(PSY.SingleTimeSeries, load1, "max_active_power")
+        @test isnothing(IS.get_unit_system(direct))
+        @test isnothing(IS.get_quantity_kind(direct))
+
+        # The zone's own series is the normalized shape, declared per unit on the
+        # component's base and naming the quantity it scales to.
+        shape = _ZONE_VALUES ./ 200.0
+        @test _ts_values(zone, "max_active_power") ≈ shape
+        zone_ts = PSY.get_time_series(PSY.SingleTimeSeries, zone, "max_active_power")
+        @test IS.get_unit_system(zone_ts) == IS.DU
+        @test IS.get_quantity_kind(zone_ts) == "active_power"
+        @test isnothing(IS.get_units(zone_ts))
+
+        # Fan-out: every load under the zone is associated with that same shape — one
+        # array, not a scaled copy per load. load1 is skipped: it already carries a
+        # series of that name. A `FixedAdmittance` is an `ElectricLoad` on a zone bus,
+        # so it follows the shape too, matching the document path's own load types.
+        for follower in (load3, shunt)
+            @test _ts_values(follower, "max_active_power") ≈ shape
+            ts = PSY.get_time_series(PSY.SingleTimeSeries, follower, "max_active_power")
+            @test IS.get_unit_system(ts) == IS.DU
+            @test IS.get_quantity_kind(ts) == "active_power"
+        end
         @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
 
-        # The zone keeps its own raw series.
-        @test _ts_values(zone, "max_active_power") ≈ _ZONE_VALUES
-
-        # Fan-out: load3 gets the normalized shape scaled by its own natural-units
-        # peak; load1 is skipped because it already carries that series name.
-        peak = PSY.get_max_active_power(load3, PSY.NU)
-        @test _ts_values(load3, "max_active_power") ≈ _ZONE_VALUES ./ 200.0 .* peak
-        @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
-
-        # A FixedAdmittance has no peak power to scale by, and load2 is outside
-        # the zone; neither takes the zonal profile.
-        @test !PSY.has_time_series(shunt)
+        # load2 is outside the zone, so it never takes the zonal profile.
+        @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "max_active_power")
 
         # Period-pivoted layout flattens row-major from the Year/Month/Day origin.
         ts = PSY.get_time_series(PSY.SingleTimeSeries, load2, "requirement")

@@ -32,6 +32,27 @@ end
           Set([Dates.Millisecond(Dates.Hour(1)), Dates.Millisecond(Dates.Minute(5))])
 end
 
+@testset "keep_time_series_resolution! drops the other resolution" begin
+    sys = _built()
+    total = length(sys.time_series)
+    hourly = count(r -> IS.get_resolution(r.series) == Dates.Hour(1), sys.time_series)
+    @test 0 < hourly < total
+
+    PDP.keep_time_series_resolution!(sys, Dates.Hour(1))
+    @test length(sys.time_series) == hourly
+    @test all(IS.get_resolution(r.series) == Dates.Hour(1) for r in sys.time_series)
+
+    # The staging is what the sidecar is written from, so the drop reaches the store and
+    # the document rows alike.
+    @test length(PDP.time_series_rows(sys)) == hourly
+
+    # `nothing` keeps everything; a resolution nothing was staged at errors rather than
+    # silently emptying the bundle.
+    PDP.keep_time_series_resolution!(sys, nothing)
+    @test length(sys.time_series) == hourly
+    @test_throws IS.DataFormatError PDP.keep_time_series_resolution!(sys, Dates.Minute(5))
+end
+
 @testset "a multiplier becomes device-base units on normalized values" begin
     sys = _built()
     # Every RTS pointer entry declares a scaling_factor_multiplier, so every
@@ -46,6 +67,49 @@ end
     for row in zone_rows
         @test maximum(IS.get_array(row.series)) <= 1.0
     end
+end
+
+@testset "a normalized series declares its basis and the quantity it scales to" begin
+    sys = _built()
+    # Every RTS pointer declares a multiplier, so every series is per unit on its owner's
+    # own base. `units` stays unset: a per-unit basis is not a units label.
+    for row in sys.time_series
+        @test IS.get_unit_system(row.series) == PDP.DEVICE_BASE_UNIT_SYSTEM
+        @test isnothing(IS.get_units(row.series))
+        @test !isnothing(IS.get_quantity_kind(row.series))
+    end
+
+    # The quantity is the multiplier's own, not the accessor name. RTS reservoirs are
+    # accounted in ENERGY, so a level scales to energy and an inflow to power.
+    by_name = Dict(
+        IS.get_name(r.series) => IS.get_quantity_kind(r.series) for r in sys.time_series
+    )
+    @test by_name["max_active_power"] == "active_power"
+    @test by_name["requirement"] == "active_power"
+    @test by_name["storage_capacity"] == "energy"
+    @test by_name["inflow"] == "power"
+end
+
+@testset "an unmapped or unnormalized multiplier is not silently unstated" begin
+    sys = _built()
+    reservoir = first(PDP.get_components(sys, "HydroReservoir"))
+    entry = PDP.TimeSeriesPointer(
+        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), "get_weather",
+    )
+    @test_throws IS.DataFormatError PDP._series_quantity_kind(
+        sys, entry, "HydroReservoir", PDP.get_value(reservoir, :id),
+    )
+
+    # No multiplier means no declared basis, so no quantity to name either.
+    bare = PDP.TimeSeriesPointer(
+        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), nothing,
+    )
+    @test isnothing(
+        PDP._series_quantity_kind(
+            sys, bare, "HydroReservoir", PDP.get_value(reservoir, :id),
+        ),
+    )
+    @test isnothing(PDP._series_unit_system(bare))
 end
 
 @testset "a zone's load series fans out to the loads under it" begin
@@ -118,7 +182,10 @@ end
     reserve_rows = [r for r in sys.time_series if r.owner_type == "OnlineReserve"]
     @test length(reserve_rows) == 12
     @test all(r -> IS.get_name(r.series) == "requirement", reserve_rows)
-    @test all(r -> IS.get_unit_system(r.series) == PDP.DEVICE_BASE_UNIT_SYSTEM, reserve_rows)
+    @test all(
+        r -> IS.get_unit_system(r.series) == PDP.DEVICE_BASE_UNIT_SYSTEM,
+        reserve_rows,
+    )
 end
 
 @testset "write_time_series persists the catalog and dedups arrays" begin
