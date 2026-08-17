@@ -32,8 +32,7 @@ PowerTableDataParserPowerSystemsExt = ["PowerSystems", "TimeSeries"]
 # expose are generated and not yet released. Switch to a tagged rev before merge.
 PowerCoreOpenAPIModels = {path = "../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
 PowerOperationsOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
-# The working IS checkout for the rust-backed time series store.
-InfrastructureSystems = {path = "../IS3.jl"}
+InfrastructureSystems = {rev = "feat/infrastore-integration", url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl"}
 
 [compat]
 CSV = "~0.10"
