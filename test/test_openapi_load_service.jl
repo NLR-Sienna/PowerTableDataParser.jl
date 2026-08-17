@@ -49,7 +49,7 @@ end
     @test PDP.get_value(reserves["Reg_Down"], :time_frame) ≈ 5.0
 end
 
-@testset "membership is normalized into service association rows" begin
+@testset "membership is normalized into dedicated association rows" begin
     sys, _ = _services()
     # The reserve-to-device link is many-to-many, so it is rows rather than a field on
     # either side: the component carries no `contributing_devices`.
@@ -59,7 +59,7 @@ end
     # Membership has its own table: a service is a component, not a supplemental
     # attribute, so the row's two ends resolve against different id sets. No filtering by
     # attribute_type — every row here is a membership.
-    service_rows = PDP.get_document(sys).service_associations
+    service_rows = PDP.get_service_associations(sys)
     @test !isempty(service_rows)
     reserve_ids = Set(
         PDP.get_value(r, :id) for r in PDP.get_components(sys, "OnlineReserve")

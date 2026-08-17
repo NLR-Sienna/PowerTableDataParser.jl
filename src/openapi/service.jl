@@ -97,8 +97,7 @@ function _contributing_device_id(reg::IdRegistry, device_types, device_name, res
 end
 
 """
-Emit one unified supplemental-attribute-association row per (reserve, contributing device)
-pair.
+Emit one service-association row per (reserve, contributing device) pair.
 
 Mirrors PSCB's rule: an explicit `contributing_devices` list wins, and otherwise a
 generator contributes when its `category` is in `eligible_device_subcategories` **and**

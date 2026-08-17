@@ -57,6 +57,7 @@ get_document(sys::OpenAPISystem) = sys.document
 
 get_supplemental_attribute_associations(sys::OpenAPISystem) =
     get_document(sys).supplemental_attribute_associations
+get_service_associations(sys::OpenAPISystem) = get_document(sys).service_associations
 
 """Record the table columns the data model has no field for, against a component."""
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
@@ -93,7 +94,7 @@ Record a supplemental attribute and the entity it describes.
 
 This parser emits no plant-family attributes, so it never writes a `plant_associations` or
 `combined_cycle_associations` row; reserve membership goes through
-`add_service_association!` below.
+`add_service_association!` below, which uses its own table.
 """
 function add_supplemental_attribute!(
     sys::OpenAPISystem,
@@ -110,8 +111,9 @@ Record that `entity_id` contributes to the service `service_id`.
 A service membership is a row in its own `service_associations` table, not in
 `supplemental_attribute_associations`: a service is a component rather than a supplemental
 attribute, so the two ends of the link resolve against different id sets and the document
-validates each accordingly. The service's own type is already on the component, so no
-`attribute_type` discriminator is needed here.
+validates each accordingly. The service's own type is already on the component, and
+`entity_id` may name a Device, a Branch, or another Service, so no type discriminator is
+needed here.
 
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
@@ -119,8 +121,7 @@ device can match one reserve twice, and silently collapsing that would hide a ma
 rule set.
 """
 function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id::Int)
-    doc = get_document(sys)
-    for existing in doc.service_associations
+    for existing in get_service_associations(sys)
         if get_value(existing, :service_id) == service_id &&
            get_value(existing, :entity_id) == entity_id
             throw(
@@ -131,7 +132,7 @@ function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id
         end
     end
     PC.add_service_association!(
-        doc,
+        get_document(sys),
         PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
     )
     return
