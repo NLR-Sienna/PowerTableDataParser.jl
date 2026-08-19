@@ -514,9 +514,7 @@ function time_series_rows(sys::OpenAPISystem)
                 owner_category = "Component",
                 features = Dict{String, PC.FeatureValue}[],
                 units = IS.get_units(series),
-                # The document spells this `quantity_type`; IS and InfraStore spell the same
-                # field `quantity_kind`. One name should win; until then this is the bridge.
-                quantity_type = IS.get_quantity_kind(series),
+                quantity_kind = IS.get_quantity_kind(series),
                 unit_system = _document_unit_system(IS.get_unit_system(series)),
             ),
         )
