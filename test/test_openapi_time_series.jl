@@ -234,3 +234,22 @@ end
         end
     end
 end
+
+@testset "time_series_rows orders deterministically across builds" begin
+    # The catalog is read back in raw store order, which is not guaranteed stable across
+    # separate builds. `time_series_rows` must sort so a document written twice lists its
+    # series identically (mirrors PSY's `IS.openapi_row_sort_key` sort in its own exporter).
+    sys1 = _built()
+    sys2 = _built()
+    PDP.keep_time_series_resolution!(sys1, Dates.Hour(1))
+    PDP.keep_time_series_resolution!(sys2, Dates.Hour(1))
+    mktempdir() do dir
+        metadata1 = PDP.write_time_series(sys1, joinpath(dir, "ts1.h5"))
+        metadata2 = PDP.write_time_series(sys2, joinpath(dir, "ts2.h5"))
+        rows1 = PDP.time_series_rows(sys1, metadata1, "ts1.h5")
+        rows2 = PDP.time_series_rows(sys2, metadata2, "ts2.h5")
+        key(row) = (row.value.owner_id, row.value.name)
+        @test key.(rows1) == key.(rows2)
+        @test issorted(key.(rows1))
+    end
+end

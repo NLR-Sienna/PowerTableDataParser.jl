@@ -491,6 +491,9 @@ function time_series_rows(
 )
     doc = get_document(sys)
     rows = PTS.TimeSeriesAssociation[]
+    # Sorted so a document written twice from the same store lists its series in the same
+    # order — mirrors PSY's sibling exporter (`PowerSystems.jl/src/openapi/export_document.jl`).
+    sort!(metadata; by = IS.openapi_row_sort_key)
     for meta in metadata
         push!(
             rows,

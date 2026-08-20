@@ -40,7 +40,11 @@ function to_json(
     pretty::Bool = false,
 )
     ts_basename = nothing
-    metadata = []
+    # Rebuilt rather than appended, so a second `to_json` on the same system does not stack a
+    # duplicate set of rows. The rows describe the catalog that was just written, so they are
+    # built from what `write_time_series` committed rather than from the staged series.
+    associations = get_document(sys).time_series_associations
+    empty!(associations)
     if !isempty(sys.time_series)
         ts_basename = time_series_filename(filename)
         ts_path = joinpath(dirname(abspath(filename)), ts_basename)
@@ -51,13 +55,6 @@ function to_json(
             rm(artifact; force = true)
         end
         metadata = write_time_series(sys, ts_path)
-    end
-    # Rebuilt rather than appended, so a second `to_json` on the same system does not stack a
-    # duplicate set of rows. The rows describe the catalog that was just written, so they are
-    # built from what `write_time_series` committed rather than from the staged series.
-    associations = get_document(sys).time_series_associations
-    empty!(associations)
-    if !isnothing(ts_basename)
         append!(associations, time_series_rows(sys, metadata, ts_basename))
     end
     document = _document_for_write(get_document(sys), ts_basename)
