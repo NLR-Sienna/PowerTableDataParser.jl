@@ -433,7 +433,10 @@ keep_time_series_resolution!(::OpenAPISystem, ::Nothing) = nothing
 
 """
 Write the staged series to the store's sidecar pair: `path` (the arrays) and
-`path * ".sqlite"` (the catalog, which is the association table).
+`path * ".sqlite"` (the catalog, which is the association table), and stamp in the
+document's supplemental-attribute association rows before persisting — the sidecar is
+authoritative for both association tables, so whatever `add_supplemental_attribute!` has
+recorded on the document travels with it.
 
 Everything goes through InfrastructureSystems' store wrappers — the InfraStore
 backend is an implementation detail encapsulated there. The whole batch commits
@@ -441,14 +444,18 @@ as one transaction, and the store dedups arrays by content hash — a fanned-out
 series lands once no matter how many owners reference it, and identical arrays
 from different entries collapse too.
 
-Returns the committed catalog's metadata rows, which [`time_series_rows`](@ref) turns into
-document rows. They are read here rather than derived from `sys.time_series` because
-`element_type`, `element_shape`, and `address` are required document columns that only the
-store can answer: InfraStore derives the element typing from the array it just wrote, and
-re-deriving it from the staged series would be a second source of truth for the one field
-the schema says the writing package owns.
+Returns the store's own `TimeSeriesAssociation` rows for what was just committed, already
+sorted by identity and stamped with `address` — `IS.openapi_time_series_association_rows`,
+called while the store is still open. Reading through the store rather than deriving from
+`sys.time_series` is what fills `id` (the store's own rowid), `element_type`, and
+`element_shape`: InfraStore derives the element typing from the array it just wrote, and
+re-deriving it here would be a second source of truth for fields the store owns.
 """
-function write_time_series(sys::OpenAPISystem, path::AbstractString)
+function write_time_series(
+    sys::OpenAPISystem,
+    path::AbstractString,
+    address::AbstractString,
+)
     category = IS.get_owner_category(IS.InfrastructureSystemsComponent)
     store = IS.Store(; in_memory = true)
     try
@@ -464,46 +471,28 @@ function write_time_series(sys::OpenAPISystem, path::AbstractString)
             )
         end
         IS.commit_batch!(store, batch)
+        _stamp_supplemental_attribute_associations!(store, sys)
         IS.serialize(store, String(path))
-        return IS.list_time_series_metadata(store)
+        return IS.openapi_time_series_association_rows(store; address = address)
     finally
         IS.close!(store)
     end
 end
 
-# ── document rows ──────────────────────────────────────────────────────────────
-
 """
-One `TimeSeriesAssociation` row per stored series, from the catalog
-[`write_time_series`](@ref) just committed.
-
-The sidecar holds the values; these rows let a consumer see what a document's bundle
-contains — and in what units, on what basis — without opening the store. Building them from
-the catalog rather than from `sys.time_series` is what makes the two descriptions the same
-by construction, and is the only way to fill `element_type` / `element_shape` / `address`.
-
-`address` names the store the values live in: the sidecar's basename.
+Ingest the document's `supplemental_attribute_associations` rows into `store`'s own
+association table in one bulk call, so the sidecar is authoritative for attribute
+attachments the same way it already is for time series. A no-op when the document names
+none — an empty document should not force a needless transaction.
 """
-function time_series_rows(
-    sys::OpenAPISystem,
-    metadata::AbstractVector,
-    address::AbstractString,
-)
-    doc = get_document(sys)
-    rows = PTS.TimeSeriesAssociation[]
-    # Sorted so a document written twice from the same store lists its series in the same
-    # order — mirrors PSY's sibling exporter (`PowerSystems.jl/src/openapi/export_document.jl`).
-    sort!(metadata; by = IS.openapi_row_sort_key)
-    for meta in metadata
-        push!(
-            rows,
-            IS.to_openapi(
-                meta;
-                id = PD.next_id!(doc),
-                owner_id = Int(meta.owner_id),
-                address = address,
-            ),
-        )
+function _stamp_supplemental_attribute_associations!(store::IS.Store, sys::OpenAPISystem)
+    associations = get_supplemental_attribute_associations(sys)
+    if isempty(associations)
+        return
     end
-    return rows
+    IS.import_supplemental_attribute_association_rows!(
+        store,
+        OpenAPI.to_json(associations),
+    )
+    return
 end

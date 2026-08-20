@@ -71,6 +71,38 @@ end
     @test haskey(doc, "supplemental_attribute_associations")
 end
 
+@testset "the sidecar catalog is authoritative for supplemental-attribute associations" begin
+    sys = _rts_system()
+    mktempdir() do dir
+        path = joinpath(dir, "rts.json")
+        PDP.to_json(sys, path)
+        doc = JSON.parse(read(path, String))
+        doc_associations = doc["supplemental_attribute_associations"]
+        @test !isempty(doc_associations)
+
+        store = IS.open_infrastore_store(
+            joinpath(dir, "rts_time_series_storage.h5");
+            read_only = true,
+        )
+        try
+            store_rows = IS.openapi_supplemental_attribute_association_rows(store)
+            @test length(store_rows) == length(doc_associations)
+            key(row) =
+                (row.component_id, row.component_type, row.attribute_id, row.attribute_type)
+            doc_key(row) =
+                (
+                    row["component_id"],
+                    row["component_type"],
+                    row["attribute_id"],
+                    row["attribute_type"],
+                )
+            @test Set(key.(store_rows)) == Set(doc_key.(doc_associations))
+        finally
+            IS.close!(store)
+        end
+    end
+end
+
 @testset "nested cost objects survive one level of encoding" begin
     doc = _round_trip(_rts_system())
     gen = first(

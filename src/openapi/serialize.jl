@@ -54,8 +54,7 @@ function to_json(
             end
             rm(artifact; force = true)
         end
-        metadata = write_time_series(sys, ts_path)
-        append!(associations, time_series_rows(sys, metadata, ts_basename))
+        append!(associations, write_time_series(sys, ts_path, ts_basename))
     end
     document = _document_for_write(get_document(sys), ts_basename)
     PD.write_document(document, filename; pretty = pretty, force = force)
