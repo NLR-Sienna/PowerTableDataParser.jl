@@ -27,8 +27,12 @@ import InfrastructureSystems:
 
 import PowerCoreOpenAPIModels
 import PowerOperationsOpenAPIModels
+import PowerTimeSeriesOpenAPIModels
+import PowerOpenAPIModels
 const PC = PowerCoreOpenAPIModels
 const PO = PowerOperationsOpenAPIModels
+const PTS = PowerTimeSeriesOpenAPIModels
+const PD = PowerOpenAPIModels
 
 #################################################################################
 # Includes

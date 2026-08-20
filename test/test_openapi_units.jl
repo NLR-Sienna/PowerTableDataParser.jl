@@ -107,7 +107,7 @@ end
     @test line.r == 5.0
 
     other = PDP.PO.TwoTerminalLCCLine()
-    PDP.set_value!(other, :parameter_units, "DEVICE_BASE")
+    PDP.set_value!(other, :parameter_units, "COMPONENT_BASE")
     @test_throws IS.DataFormatError PDP.set_value!(other, :r, 5.0, "ohm")
     PDP.set_value!(other, :r, 0.01, "pu")
     @test other.r == 0.01

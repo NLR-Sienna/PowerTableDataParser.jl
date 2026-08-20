@@ -32,7 +32,7 @@ end
     mktempdir() do dir
         path = joinpath(dir, "x.json")
         PDP.to_json(sys, path)
-        # PC.write_document owns the "already exists" check for the JSON path now.
+        # PD.write_document owns the "already exists" check for the JSON path now.
         @test_throws PDP.PC.DocumentFormatError PDP.to_json(sys, path)
         PDP.to_json(sys, path; force = true)
         @test isfile(path)
@@ -60,7 +60,7 @@ end
     row = first(rows)
     @test row["time_series_type"] == "SingleTimeSeries"
     @test row["owner_category"] == "Component"
-    @test row["unit_system"] == "DEVICE_BASE"
+    @test row["unit_system"] == "COMPONENT_BASE"
     @test !isempty(row["name"])
     # Every row points at a component the document declares.
     component_ids = Set(

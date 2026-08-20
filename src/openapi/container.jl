@@ -11,7 +11,7 @@ struct StagedTimeSeries
 end
 
 """
-The document PTDP emits, as a thin wrapper over `PC.SystemDocument`.
+The document PTDP emits, as a thin wrapper over `PD.SystemDocument`.
 
 `document` carries the components, the supplemental-attribute association table,
 `ext` and the unit convention.
@@ -24,7 +24,7 @@ indices (by name, by bus number, by arc) the document has no use for once built.
 document only names the store file.
 """
 struct OpenAPISystem
-    document::PC.SystemDocument
+    document::PD.SystemDocument
     registry::IdRegistry
     time_series::Vector{StagedTimeSeries}
 end
@@ -34,9 +34,9 @@ Unit conventions a document may be written in, from the schemas' `UnitSystem`.
 
 The schemas offer no system-base option: per-unit data historically on the system
 base records that base in the component's own `base_power` and rides as
-`DEVICE_BASE`.
+`COMPONENT_BASE`.
 """
-const UNIT_SYSTEMS = ("NATURAL_UNITS", "DEVICE_BASE")
+const UNIT_SYSTEMS = ("NATURAL_UNITS", "COMPONENT_BASE")
 
 function OpenAPISystem(
     base_power::Float64;
@@ -49,7 +49,7 @@ function OpenAPISystem(
             ),
         )
     end
-    document = PC.SystemDocument(base_power; unit_system = unit_system)
+    document = PD.SystemDocument(base_power; unit_system = unit_system)
     return OpenAPISystem(document, IdRegistry(document), Vector{StagedTimeSeries}())
 end
 
@@ -61,31 +61,31 @@ get_service_associations(sys::OpenAPISystem) = get_document(sys).service_associa
 
 """Record the table columns the data model has no field for, against a component."""
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
-    PC.set_ext!(get_document(sys), component_id, extras)
+    PD.set_ext!(get_document(sys), component_id, extras)
     return
 end
 
-get_ext(sys::OpenAPISystem, component_id::Int) = PC.get_ext(get_document(sys), component_id)
+get_ext(sys::OpenAPISystem, component_id::Int) = PD.get_ext(get_document(sys), component_id)
 
-get_base_power(sys::OpenAPISystem) = PC.get_base_power(get_document(sys))
+get_base_power(sys::OpenAPISystem) = PD.get_base_power(get_document(sys))
 get_registry(sys::OpenAPISystem) = sys.registry
 
-get_unit_system(sys::OpenAPISystem) = PC.get_unit_system(get_document(sys))
+get_unit_system(sys::OpenAPISystem) = PD.get_unit_system(get_document(sys))
 
 """
 Whether values are stored per unit rather than in the schemas' natural units.
 
-`DEVICE_BASE` reproduces PowerSystems' storage convention: the descriptors' own
+`COMPONENT_BASE` reproduces PowerSystems' storage convention: the descriptors' own
 per-unit targets, which is device base for injectors and system base where the
 descriptors say so. The `x-unit` annotations still name the natural unit, so a
 per-unit document is for comparison against PowerSystems rather than for a
 consumer that reads the annotations — which is why the document states the
 convention it was written in.
 """
-uses_per_unit(sys::OpenAPISystem) = PC.uses_per_unit(get_document(sys))
+uses_per_unit(sys::OpenAPISystem) = PD.uses_per_unit(get_document(sys))
 
 function add_component!(sys::OpenAPISystem, component::T) where {T <: OpenAPI.APIModel}
-    PC.add_component!(get_document(sys), component)
+    PD.add_component!(get_document(sys), component)
     return
 end
 
@@ -101,7 +101,7 @@ function add_supplemental_attribute!(
     attribute::OpenAPI.APIModel,
     entity_id::Int,
 )
-    PC.add_supplemental_attribute!(get_document(sys), attribute, entity_id)
+    PD.add_supplemental_attribute!(get_document(sys), attribute, entity_id)
     return
 end
 
@@ -131,7 +131,7 @@ function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id
             )
         end
     end
-    PC.add_service_association!(
+    PD.add_service_association!(
         get_document(sys),
         PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
     )
@@ -140,12 +140,12 @@ end
 
 """Attributes of one type, in the order they were added."""
 function get_supplemental_attributes(sys::OpenAPISystem, type_name::AbstractString)
-    return PC.get_supplemental_attributes(get_document(sys), type_name)
+    return PD.get_supplemental_attributes(get_document(sys), type_name)
 end
 
 function get_components(sys::OpenAPISystem, type_name::AbstractString)
-    return PC.get_components(get_document(sys), type_name)
+    return PD.get_components(get_document(sys), type_name)
 end
 
 """Type names in sorted order, so serialized output is deterministic."""
-component_type_names(sys::OpenAPISystem) = PC.component_type_names(get_document(sys))
+component_type_names(sys::OpenAPISystem) = PD.component_type_names(get_document(sys))

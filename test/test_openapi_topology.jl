@@ -130,7 +130,7 @@ end
     shunt = only(shunts)
     @test PDP.get_value(shunt, :name) == "Alber"
     @test PDP.get_value(shunt, :bus) == bus_id
-    @test PDP.get_value(shunt, :admittance_units) == "DEVICE_MVAR"
+    @test PDP.get_value(shunt, :admittance_units) == "COMPONENT_MVAR"
     y = PDP.get_value(shunt, :Y)
     @test y.real ≈ 0.0
     @test y.imag ≈ -100.0
@@ -139,7 +139,7 @@ end
     PDP._add_fixed_admittance!(sys, reg, zero_row, bus_id, false)
     @test length(PDP.get_components(sys, "FixedAdmittance")) == 1
 
-    # Under a DEVICE_BASE system the value has already been divided by the
+    # Under a COMPONENT_BASE system the value has already been divided by the
     # system base (there is no separate device base for a shunt), so multiplying
     # by that base recovers the MVAr the raw column held.
     per_unit_row = (name = "Camus", shunt_g = 0.0, shunt_b = -1.0)
@@ -147,7 +147,7 @@ end
     shunts2 = PDP.get_components(sys, "FixedAdmittance")
     @test length(shunts2) == 2
     camus = first(s for s in shunts2 if PDP.get_value(s, :name) == "Camus")
-    @test PDP.get_value(camus, :admittance_units) == "DEVICE_MVAR"
+    @test PDP.get_value(camus, :admittance_units) == "COMPONENT_MVAR"
     y2 = PDP.get_value(camus, :Y)
     @test y2.real ≈ 0.0
     @test y2.imag ≈ -1.0 * PDP.get_base_power(sys)

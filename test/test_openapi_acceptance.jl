@@ -118,10 +118,10 @@
         mktempdir() do dir
             path = joinpath(dir, "rts.json")
             PDP.to_json(sys, path; pretty = true)
-            read_back = PDP.PC.read_document(path)
-            PDP.PC.validate_document(read_back)
-            @test PDP.PC.component_type_names(read_back) == PDP.component_type_names(sys)
-            @test length(PDP.PC.get_ext(read_back, PDP.get_id(reg, "Line", "A1"))) > 0
+            read_back = PDP.PD.read_document(path)
+            PDP.PD.validate_document(read_back)
+            @test PDP.PD.component_type_names(read_back) == PDP.component_type_names(sys)
+            @test length(PDP.PD.get_ext(read_back, PDP.get_id(reg, "Line", "A1"))) > 0
         end
     end
 

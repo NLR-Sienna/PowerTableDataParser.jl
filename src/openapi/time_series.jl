@@ -225,7 +225,7 @@ Every owner a pointer entry produces.
 Usually the entry names its owner directly. A load series stated for a zone or an
 area is different: the normalized values describe the loads underneath, so each of
 them gets a row against the same series, and the aggregation keeps a row of its
-own. With the values stored per unit (`DEVICE_BASE`), no per-owner scaling
+own. With the values stored per unit (`COMPONENT_BASE`), no per-owner scaling
 metadata is needed: every owner scales by its own base quantity.
 """
 function series_owners(
@@ -440,6 +440,13 @@ backend is an implementation detail encapsulated there. The whole batch commits
 as one transaction, and the store dedups arrays by content hash — a fanned-out
 series lands once no matter how many owners reference it, and identical arrays
 from different entries collapse too.
+
+Returns the committed catalog's metadata rows, which [`time_series_rows`](@ref) turns into
+document rows. They are read here rather than derived from `sys.time_series` because
+`element_type`, `element_shape`, and `address` are required document columns that only the
+store can answer: InfraStore derives the element typing from the array it just wrote, and
+re-deriving it from the staged series would be a second source of truth for the one field
+the schema says the writing package owns.
 """
 function write_time_series(sys::OpenAPISystem, path::AbstractString)
     category = IS.get_owner_category(IS.InfrastructureSystemsComponent)
@@ -458,64 +465,40 @@ function write_time_series(sys::OpenAPISystem, path::AbstractString)
         end
         IS.commit_batch!(store, batch)
         IS.serialize(store, String(path))
+        return IS.list_time_series_metadata(store)
     finally
         IS.close!(store)
     end
-    return
 end
 
 # ── document rows ──────────────────────────────────────────────────────────────
 
-"""ISO 8601 duration, the spelling `TimeSeriesAssociation.resolution` takes."""
-_iso8601_duration(period::Dates.Period) =
-    string("PT", Dates.value(Dates.Second(period)), "S")
-
-"""The document's spelling for a series' declared basis. `nothing` stays `nothing`:
-unspecified is deliberately not `NATURAL_UNITS`."""
-_document_unit_system(::Nothing) = nothing
-_document_unit_system(::IS.NaturalUnit) = "NATURAL_UNITS"
-_document_unit_system(::IS.DeviceBaseUnit) = "DEVICE_BASE"
-_document_unit_system(::IS.SystemBaseUnit) = throw(
-    IS.DataFormatError(
-        "a staged series declares the system-base unit system, which the document cannot " *
-        "express — the schemas offer NATURAL_UNITS and DEVICE_BASE only",
-    ),
-)
-
 """
-One `TimeSeriesAssociation` row per staged series.
+One `TimeSeriesAssociation` row per stored series, from the catalog
+[`write_time_series`](@ref) just committed.
 
 The sidecar holds the values; these rows let a consumer see what a document's bundle
-contains — and in what units, on what basis — without opening the store. Keyed the way the
-store keys its own catalog, so the two describe the same series.
+contains — and in what units, on what basis — without opening the store. Building them from
+the catalog rather than from `sys.time_series` is what makes the two descriptions the same
+by construction, and is the only way to fill `element_type` / `element_shape` / `address`.
 
-Every staged series is a `SingleTimeSeries` against a component, so `time_series_type` and
-`owner_category` are fixed and `features` is empty: this parser emits no forecasts and no
-feature-discriminated series.
+`address` names the store the values live in: the sidecar's basename.
 """
-function time_series_rows(sys::OpenAPISystem)
+function time_series_rows(
+    sys::OpenAPISystem,
+    metadata::AbstractVector,
+    address::AbstractString,
+)
     doc = get_document(sys)
-    rows = PC.TimeSeriesAssociation[]
-    for staged in sys.time_series
-        series = staged.series
+    rows = PTS.TimeSeriesAssociation[]
+    for meta in metadata
         push!(
             rows,
-            PC.TimeSeriesAssociation(;
-                id = PC.next_id!(doc),
-                time_series_type = "SingleTimeSeries",
-                initial_timestamp = PC.ZonedDateTime(
-                    IS.get_initial_timestamp(series), PC.TimeZone("UTC"),
-                ),
-                resolution = _iso8601_duration(IS.get_resolution(series)),
-                length = length(series),
-                name = IS.get_name(series),
-                owner_id = staged.owner_id,
-                owner_type = staged.owner_type,
-                owner_category = "Component",
-                features = Dict{String, PC.FeatureValue}[],
-                units = IS.get_units(series),
-                quantity_kind = IS.get_quantity_kind(series),
-                unit_system = _document_unit_system(IS.get_unit_system(series)),
+            IS.to_openapi(
+                meta;
+                id = PD.next_id!(doc),
+                owner_id = Int(meta.owner_id),
+                address = address,
             ),
         )
     end

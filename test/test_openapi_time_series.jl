@@ -43,8 +43,13 @@ end
     @test all(IS.get_resolution(r.series) == Dates.Hour(1) for r in sys.time_series)
 
     # The staging is what the sidecar is written from, so the drop reaches the store and
-    # the document rows alike.
-    @test length(PDP.time_series_rows(sys)) == hourly
+    # the document rows alike. Going through `write_time_series` is the real path: the rows
+    # describe the catalog that was committed, not the staged objects.
+    mktempdir() do dir
+        metadata = PDP.write_time_series(sys, joinpath(dir, "ts.h5"))
+        @test length(metadata) == hourly
+        @test length(PDP.time_series_rows(sys, metadata, "ts.h5")) == hourly
+    end
 
     # `nothing` keeps everything; a resolution nothing was staged at errors rather than
     # silently emptying the bundle.

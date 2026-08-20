@@ -8,7 +8,7 @@
 Assemble an `OpenAPISystem` from parsed table data.
 
 `unit_system` selects the convention the values are stored in: `NATURAL_UNITS`,
-which is what the schema annotations describe, or `DEVICE_BASE`, which applies
+which is what the schema annotations describe, or `COMPONENT_BASE`, which applies
 the descriptors' per-unit targets and so reproduces what PowerSystems stores.
 The choice is recorded in the emitted document.
 

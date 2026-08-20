@@ -9,7 +9,9 @@ LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 OpenAPI = "d5e62ea6-ddf3-4d43-8e4c-ad5e6c8bfd7d"
 PowerCoreOpenAPIModels = "b7b40286-e793-417d-a9a0-b1583e4da1cb"
+PowerOpenAPIModels = "bed98974-b02a-5e2f-9ee0-a103f5c450dd"
 PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
+PowerTimeSeriesOpenAPIModels = "8c2f6a0d-6b0e-4d0a-9d8f-2b5e6a4f9c31"
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
@@ -24,7 +26,9 @@ InfrastructureSystems = {rev = "feat/infrastore-integration", url = "https://git
 PowerSystems = {rev = "feat/infrastore-integration", url = "https://github.com/Sienna-Platform/PowerSystems.jl"}
 # Sibling-checkout paths; see the note in the package Project.toml.
 PowerCoreOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
+PowerOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerOpenAPIModels.jl"}
 PowerOperationsOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
+PowerTimeSeriesOpenAPIModels = {path = "../../PowerOpenAPIModels/PowerTimeSeriesOpenAPIModels.jl"}
 
 [compat]
 julia = "^1.10"
