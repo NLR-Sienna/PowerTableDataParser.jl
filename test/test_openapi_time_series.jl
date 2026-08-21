@@ -1,3 +1,5 @@
+const _HEX_HASH_RE = r"^[0-9a-f]{64}$"
+
 function _built()
     data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
     return PDP.build_openapi_system(data)
@@ -46,7 +48,7 @@ end
     # the document rows alike. Going through `write_time_series` is the real path: the rows
     # describe the catalog that was committed, not the staged objects.
     mktempdir() do dir
-        rows = PDP.write_time_series(sys, joinpath(dir, "ts.h5"), "ts.h5")
+        rows = PDP.write_time_series(sys, joinpath(dir, "ts.h5"))
         @test length(rows) == hourly
     end
 
@@ -196,7 +198,7 @@ end
     sys = _built()
     mktempdir() do dir
         path = joinpath(dir, "ts.h5")
-        PDP.write_time_series(sys, path, "ts.h5")
+        PDP.write_time_series(sys, path)
         @test isfile(path)
         @test isfile(path * ".sqlite")
 
@@ -243,8 +245,8 @@ end
     PDP.keep_time_series_resolution!(sys1, Dates.Hour(1))
     PDP.keep_time_series_resolution!(sys2, Dates.Hour(1))
     mktempdir() do dir
-        rows1 = PDP.write_time_series(sys1, joinpath(dir, "ts1.h5"), "ts1.h5")
-        rows2 = PDP.write_time_series(sys2, joinpath(dir, "ts2.h5"), "ts2.h5")
+        rows1 = PDP.write_time_series(sys1, joinpath(dir, "ts1.h5"))
+        rows2 = PDP.write_time_series(sys2, joinpath(dir, "ts2.h5"))
         key(row) = (row.value.owner_id, row.value.name)
         @test key.(rows1) == key.(rows2)
         @test issorted(key.(rows1))
@@ -252,7 +254,11 @@ end
         # The store speaks unit-style ISO durations (`PT1H`), not the seconds spelling
         # (`PT3600S`) IS's now-deleted `_openapi_duration` used to produce.
         @test all(row.value.resolution == "PT1H" for row in rows1)
-        @test all(row.value.address == "ts1.h5" for row in rows1)
-        @test all(row.value.address == "ts2.h5" for row in rows2)
+        # `uri`/`data_hash` are the store's own content hash, not a caller-supplied
+        # locator — the same hex string in both fields.
+        @test all(occursin(_HEX_HASH_RE, row.value.uri) for row in rows1)
+        @test all(row.value.data_hash == row.value.uri for row in rows1)
+        @test all(occursin(_HEX_HASH_RE, row.value.uri) for row in rows2)
+        @test all(row.value.data_hash == row.value.uri for row in rows2)
     end
 end

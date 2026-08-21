@@ -445,17 +445,14 @@ series lands once no matter how many owners reference it, and identical arrays
 from different entries collapse too.
 
 Returns the store's own `TimeSeriesAssociation` rows for what was just committed, already
-sorted by identity and stamped with `address` — `IS.openapi_time_series_association_rows`,
+sorted by identity and stamped with `uri`/`data_hash` — `IS.openapi_time_series_association_rows`,
 called while the store is still open. Reading through the store rather than deriving from
-`sys.time_series` is what fills `id` (the store's own rowid), `element_type`, and
-`element_shape`: InfraStore derives the element typing from the array it just wrote, and
-re-deriving it here would be a second source of truth for fields the store owns.
+`sys.time_series` is what fills `element_type` and `element_shape`: InfraStore derives the
+element typing from the array it just wrote, and re-deriving it here would be a second source
+of truth for fields the store owns. `uri` and `data_hash` are the store's own content hash,
+not a caller-supplied locator.
 """
-function write_time_series(
-    sys::OpenAPISystem,
-    path::AbstractString,
-    address::AbstractString,
-)
+function write_time_series(sys::OpenAPISystem, path::AbstractString)
     category = IS.get_owner_category(IS.InfrastructureSystemsComponent)
     store = IS.Store(; in_memory = true)
     try
@@ -473,7 +470,7 @@ function write_time_series(
         IS.commit_batch!(store, batch)
         _stamp_supplemental_attribute_associations!(store, sys)
         IS.serialize(store, String(path))
-        return IS.openapi_time_series_association_rows(store; address = address)
+        return IS.openapi_time_series_association_rows(store)
     finally
         IS.close!(store)
     end
