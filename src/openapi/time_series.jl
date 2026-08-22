@@ -25,10 +25,8 @@ const CATEGORY_TO_TYPES = Dict(
         "SynchronousCondenser",
         "EnergyReservoirStorage",
     ],
-    # The deleted PSCB parser dispatched this category on the abstract PSY type
-    # `ElectricLoad` (`get_components(ElectricLoad, sys)`), so any subtype sharing a
-    # bus — including `FixedAdmittance`, confirmed by the oracle comparison — was a
-    # candidate, not just PowerLoad/StandardLoad.
+    # Includes FixedAdmittance: any ElectricLoad subtype sharing a bus is a candidate,
+    # not just PowerLoad/StandardLoad.
     "ElectricLoad" => ["PowerLoad", "StandardLoad", "FixedAdmittance"],
     "LoadZone" => ["LoadZone"],
     "Area" => ["Area"],
@@ -48,13 +46,11 @@ end
 """
 The unit system values are stored in when a pointer declared a multiplier.
 
-The legacy `scaling_factor_multiplier` concept is replaced by this: such a pointer stores its
-values normalized against the owner's corresponding base quantity (e.g. its max active power
-for a `max_active_power` series), which is exactly what `DeviceBaseUnit` declares — so the
-reader scales by that base rather than resolving an accessor name.
+Such a pointer stores its values normalized against the owner's corresponding base quantity
+(e.g. its max active power for a `max_active_power` series), which is exactly what
+`DeviceBaseUnit` declares.
 
-This was carried in the series' `units` label until InfraStore grew a real `unit_system`
-column. `units` is for a units label ("MW"); a per-unit basis is not one.
+`units` is for a units label ("MW"); a per-unit basis is not one.
 """
 const DEVICE_BASE_UNIT_SYSTEM = IS.DU
 
@@ -103,9 +99,8 @@ than being fixed by the multiplier alone.
 """
 const RESERVOIR_QUANTITY_KINDS = Dict(
     "get_storage_capacity" => RESERVOIR_LEVEL_QUANTITIES,
-    # `get_storage_target` is what the 5-bus pointer files write; PowerSystemCaseBuilder
-    # rewrites it to `get_level_targets`, the accessor a `HydroReservoir` actually has, so
-    # both spellings reach here depending on whether that pass ran.
+    # `get_storage_target` is what the 5-bus pointer files write; `get_level_targets` is the
+    # accessor a `HydroReservoir` actually has. Both spellings are in circulation.
     "get_storage_target" => RESERVOIR_LEVEL_QUANTITIES,
     "get_level_targets" => RESERVOIR_LEVEL_QUANTITIES,
     "get_inflow" => RESERVOIR_FLOW_QUANTITIES,
@@ -115,11 +110,9 @@ const RESERVOIR_QUANTITY_KINDS = Dict(
 """
 One entry of a time series pointer file.
 
-`IS.read_time_series_file_metadata` cannot be used here: it resolves the entry's
-`module` field through the loaded-module table, and every RTS entry names
-`PowerSystems`, which this package deliberately does not depend on. The type it
-names, `SingleTimeSeries`, is an InfrastructureSystems type regardless, so the
-field is read and checked rather than resolved.
+The `type` field is read and checked directly rather than resolved through IS's
+module-loading path: every RTS entry names `PowerSystems`, which this package does not
+depend on.
 """
 struct TimeSeriesPointer
     category::String
@@ -131,6 +124,10 @@ struct TimeSeriesPointer
     scaling_factor_multiplier::Union{Nothing, String}
 end
 
+"""A pointer's `normalization_factor`, as the `"max"` string or a `Float64`."""
+_normalization_factor(x::AbstractString) = x
+_normalization_factor(x) = Float64(x)
+
 function _pointer(item::Dict, directory::AbstractString)
     series_type = get(item, "type", "SingleTimeSeries")
     if series_type != "SingleTimeSeries"
@@ -141,10 +138,7 @@ function _pointer(item::Dict, directory::AbstractString)
             ),
         )
     end
-    normalization_factor = item["normalization_factor"]
-    if !isa(normalization_factor, AbstractString)
-        normalization_factor = Float64(normalization_factor)
-    end
+    normalization_factor = _normalization_factor(item["normalization_factor"])
     multiplier = get(item, "scaling_factor_multiplier", nothing)
     if !isnothing(multiplier)
         multiplier = String(multiplier)
@@ -189,11 +183,8 @@ const FANNED_OUT_MULTIPLIERS = ("get_max_active_power", "get_max_reactive_power"
 
 """Component types that carry a load series.
 
-Mirrors the deleted PSCB parser's abstract-type dispatch (`get_components(ElectricLoad,
-sys)`): every `ElectricLoad` subtype sharing a bus with the aggregation is a candidate,
-including `FixedAdmittance` — confirmed materially real by the oracle comparison, which
-found RTS-GMLC-0.2.3's 3 shunt buses (Alber/Bajer/Camus, each also carrying a `PowerLoad`)
-fanned their zone's load series out to the shunt too under the old parser."""
+Includes `FixedAdmittance`: any `ElectricLoad` subtype sharing a bus with the aggregation is
+a candidate, not just `PowerLoad`/`StandardLoad`."""
 const LOAD_TYPES = ("PowerLoad", "StandardLoad", "FixedAdmittance")
 
 """
@@ -246,16 +237,14 @@ function series_owners(
     return owners
 end
 
-"""
-Apply the pointer's normalization: `"max"` divides by the series' own peak, a
-number divides by itself. Matches the semantics the removed
-InfrastructureSystems file ingestion applied.
-"""
+"""Apply the pointer's normalization: `"max"` divides by the series' own peak, a
+number divides by itself."""
 function _normalized(values::Vector{Float64}, factor::Float64)
-    if factor == 0.0
-        throw(IS.DataFormatError("normalization_factor cannot be zero"))
+    iszero(factor) && throw(IS.DataFormatError("normalization_factor cannot be zero"))
+    if isone(factor)
+        return values
     end
-    return factor == 1.0 ? values : values ./ factor
+    return values ./ factor
 end
 
 function _normalized(values::Vector{Float64}, factor::AbstractString)
@@ -265,11 +254,18 @@ function _normalized(values::Vector{Float64}, factor::AbstractString)
     return values ./ maximum(values)
 end
 
-"""The basis a pointer's values are stored in. `nothing` when it declared no multiplier:
+"""The basis a pointer's values are stored in. `nothing` when no multiplier is declared:
 the values are then as the source file gave them, and no basis was declared — which is
 deliberately not the same as declaring natural units."""
+function _series_unit_system(multiplier::Union{Nothing, AbstractString})
+    if isnothing(multiplier)
+        return nothing
+    end
+    return DEVICE_BASE_UNIT_SYSTEM
+end
+
 _series_unit_system(entry::TimeSeriesPointer) =
-    isnothing(entry.scaling_factor_multiplier) ? nothing : DEVICE_BASE_UNIT_SYSTEM
+    _series_unit_system(entry.scaling_factor_multiplier)
 
 """
 The reservoir accounting convention a reservoir-normalized entry is stated against.
@@ -298,14 +294,19 @@ function _reservoir_level_data_type(
         throw(IS.DataFormatError("no HydroReservoir carries id=$owner_id"))
     end
     level_types = unique(get_value(r, :level_data_type) for r in reservoirs)
-    length(level_types) == 1 || throw(
-        IS.DataFormatError(
-            "a reservoir-normalized series is owned by a $owner_type rather than the " *
-            "reservoir, and the document's reservoirs state $(isempty(level_types) ?
-            "no level_data_type" : "several: $(join(sort(level_types), ", "))") — so the " *
-            "quantity its values scale to cannot be determined",
-        ),
-    )
+    if length(level_types) != 1
+        stated = "several: $(join(sort(level_types), ", "))"
+        if isempty(level_types)
+            stated = "no level_data_type"
+        end
+        throw(
+            IS.DataFormatError(
+                "a reservoir-normalized series is owned by a $owner_type rather than the " *
+                "reservoir, and the document's reservoirs state $stated — so the " *
+                "quantity its values scale to cannot be determined",
+            ),
+        )
+    end
     return only(level_types)
 end
 
@@ -433,24 +434,17 @@ keep_time_series_resolution!(::OpenAPISystem, ::Nothing) = nothing
 
 """
 Write the staged series to the store's sidecar pair: `path` (the arrays) and
-`path * ".sqlite"` (the catalog, which is the association table), and stamp in the
-document's supplemental-attribute association rows before persisting — the sidecar is
-authoritative for both association tables, so whatever `add_supplemental_attribute!` has
-recorded on the document travels with it.
+`path * ".sqlite"` (the catalog), and stamp in the document's supplemental-attribute
+association rows before persisting — the sidecar is authoritative for both association
+tables, so whatever `add_supplemental_attribute!` has recorded on the document travels
+with it.
 
-Everything goes through InfrastructureSystems' store wrappers — the InfraStore
-backend is an implementation detail encapsulated there. The whole batch commits
-as one transaction, and the store dedups arrays by content hash — a fanned-out
-series lands once no matter how many owners reference it, and identical arrays
-from different entries collapse too.
+The whole batch commits as one transaction, and the store dedups arrays by content hash —
+a fanned-out series lands once no matter how many owners reference it.
 
-Returns the store's own `TimeSeriesAssociation` rows for what was just committed, already
-sorted by identity and stamped with `uri`/`data_hash` — `IS.openapi_time_series_association_rows`,
-called while the store is still open. Reading through the store rather than deriving from
-`sys.time_series` is what fills `element_type` and `element_shape`: InfraStore derives the
-element typing from the array it just wrote, and re-deriving it here would be a second source
-of truth for fields the store owns. `uri` and `data_hash` are the store's own content hash,
-not a caller-supplied locator.
+Returns the store's own `TimeSeriesAssociation` rows, already sorted by identity and
+stamped with `uri`/`data_hash`, read back from the store rather than derived from
+`sys.time_series` so `element_type`/`element_shape` come from the store itself.
 """
 function write_time_series(sys::OpenAPISystem, path::AbstractString)
     category = IS.get_owner_category(IS.InfrastructureSystemsComponent)

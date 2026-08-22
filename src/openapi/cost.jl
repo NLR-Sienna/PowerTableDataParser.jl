@@ -1,6 +1,3 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:375-380
-# (column selection), 710-839 (make_cost) and 841-964 (curve construction).
-#
 # Cost objects are Core value types rather than components, so they are built with
 # keyword arguments. The empty-construct rule applies to components entering the
 # container, not to the value objects nested inside them.
@@ -34,8 +31,8 @@ const COST_POINT_COLUMN_NAMES = CostPointColumns([
 """
 Choose between the heat-rate and cost-point representations for a dataset.
 
-Mirrors PSCB: the two are mutually exclusive, and a table declaring neither is a
-data error rather than a zero-cost system.
+The two are mutually exclusive, and a table declaring neither is a data error rather than
+a zero-cost system.
 """
 function cost_columns(data::PowerSystemTableData)
     fields = get_user_fields(data, InputCategory.GENERATOR)
@@ -185,7 +182,7 @@ function _maybe_float(value)
     return _as_float(value)
 end
 
-"""Value curve for a piecewise input-output cost, with PSCB's short-series fallbacks."""
+"""Value curve for a piecewise input-output cost, with fallbacks for a short series."""
 function _pwl_value_curve(gen::NamedTuple, cost_pairs)
     if length(cost_pairs) > 1
         return PC.InputOutputCurve(; function_data = create_pwl_cost(cost_pairs))
@@ -198,7 +195,7 @@ function _pwl_value_curve(gen::NamedTuple, cost_pairs)
     return linear_curve(0.0)
 end
 
-"""Value curve for a piecewise incremental cost, with PSCB's short-series fallbacks."""
+"""Value curve for a piecewise incremental cost, with fallbacks for a short series."""
 function _pwinc_value_curve(gen::NamedTuple, cost_pairs)
     if length(cost_pairs) > 1
         first_pair = first(cost_pairs)
@@ -233,9 +230,8 @@ Start-up and shut-down costs.
 Where the data states a total start cost it is used as given. Otherwise the cost
 is built from what a start consumes: the cold-start fuel requirement priced at
 the unit's fuel price, plus any non-fuel start cost the table states separately.
-PSCB knows only the fuel term, because the non-fuel column went unread.
 
-A missing shut-down cost is zero, which PSCB also does.
+A missing shut-down cost is zero.
 """
 function calculate_uc_cost(gen::NamedTuple, price::Float64)
     start_up = _maybe_float(get(gen, :startup_cost, nothing))
@@ -382,7 +378,7 @@ end
 Renewable operation cost.
 
 Heat rates do not describe a renewable unit, so only the VOM term survives and
-the value curve is zero. PSCB warns and does the same.
+the value curve is zero.
 """
 function make_renewable_cost(
     data::PowerSystemTableData,

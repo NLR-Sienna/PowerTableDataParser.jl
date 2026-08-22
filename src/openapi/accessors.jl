@@ -1,10 +1,5 @@
-# Descriptor-driven table access, ported from
-# PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl (lines 15-90 and
-# 1493-1671) and .../common.jl (lines 102-130 and 180-252).
-#
-# The one deliberate divergence: get_generator_type returns the mapped type name
-# as a String. PSCB resolves it to a PowerSystems DataType via getfield, which
-# PTDP cannot do and does not need to.
+# get_generator_type returns the mapped type name as a String rather than resolving it to
+# a PowerSystems type, since this package does not depend on PowerSystems.
 
 """
 Return the mapped component type name for a fuel and unit type.
@@ -163,14 +158,20 @@ function iterate_rows(
     extras = false,
 )
     df = get_dataframe(data, category)
-    field_infos =
-        _get_field_infos(data, category, DataFrames.names(df); per_unit = per_unit)
+    df_names = Set(DataFrames.names(df))
+    field_infos = _get_field_infos(data, category, df_names; per_unit = per_unit)
     declared = Set(field_info.custom_name for field_info in field_infos)
     Channel() do channel
         for row in DataFrames.eachrow(df)
-            obj = _read_data_row(data, row, field_infos; na_to_nothing = na_to_nothing)
+            obj = _read_data_row(
+                data,
+                row,
+                field_infos,
+                df_names;
+                na_to_nothing = na_to_nothing,
+            )
             if extras
-                obj = merge(obj, (ext = _extra_columns(row, declared),))
+                obj = merge(obj, (ext = _extra_columns(row, declared, df_names),))
             end
             put!(channel, obj)
         end
@@ -183,9 +184,9 @@ Columns of a row that no descriptor field claims.
 Empty cells are left out rather than recorded as blanks: an absent value and an
 empty string are not the same statement about the data.
 """
-function _extra_columns(row, declared::Set{String})
+function _extra_columns(row, declared::Set{String}, df_names::Set{String})
     extras = Dict{String, Any}()
-    for name in DataFrames.names(row)
+    for name in df_names
         if name in declared
             continue
         end
@@ -306,12 +307,28 @@ function _get_field_infos(
     return fields
 end
 
+_coerce_numeric(value::AbstractString) = tryparse(Float64, value)
+_coerce_numeric(value) = value
+
+function _divide_or_zero(value, denominator)
+    if iszero(denominator)
+        return 0.0
+    end
+    return value / denominator
+end
+
 """Reads values from dataframe row and performs necessary conversions."""
-function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_nothing = true)
+function _read_data_row(
+    data::PowerSystemTableData,
+    row,
+    field_infos,
+    df_names::Set{String};
+    na_to_nothing = true,
+)
     fields = Vector{String}()
     vals = Vector()
     for field_info in field_infos
-        if field_info.custom_name in DataFrames.names(row)
+        if field_info.custom_name in df_names
             value = row[field_info.custom_name]
         else
             value = field_info.default_value
@@ -332,8 +349,8 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
                field_info.per_unit_conversion.To == IS.UnitSystem.SYSTEM_BASE
                 @debug "convert to $(field_info.per_unit_conversion.To)" _group =
                     IS.LOG_GROUP_PARSING field_info.custom_name
-                value = value isa AbstractString ? tryparse(Float64, value) : value
-                value = data.base_power == 0.0 ? 0.0 : value / data.base_power
+                value = _coerce_numeric(value)
+                value = _divide_or_zero(value, data.base_power)
             elseif field_info.per_unit_conversion.From == IS.UnitSystem.NATURAL_UNITS &&
                    field_info.per_unit_conversion.To == IS.UnitSystem.DEVICE_BASE
                 reference_idx = findfirst(
@@ -355,8 +372,8 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
                         "$(reference_info.name) is required for p.u. conversion",
                     ),
                 )
-                value = value isa AbstractString ? tryparse(Float64, value) : value
-                value = reference_value == 0.0 ? 0.0 : value / reference_value
+                value = _coerce_numeric(value)
+                value = _divide_or_zero(value, reference_value)
             elseif field_info.per_unit_conversion.From != field_info.per_unit_conversion.To
                 throw(
                     IS.DataFormatError(

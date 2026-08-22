@@ -16,12 +16,16 @@ end
 struct is rebuilt around the same mutable containers — by reference, not copied.
 
 Fields are copied by name rather than listed positionally: this is a container owned by
-another package, and spelling out its field order here means every field added there (the
-plant/combined-cycle/service association tables, most recently) silently breaks this call.
+another package, and spelling out its field order here means every field added there
+silently breaks this call.
 """
 function _document_for_write(doc::PD.SystemDocument, ts_basename::Union{Nothing, String})
     args = map(fieldnames(PD.SystemDocument)) do field
-        field === :time_series_storage_file ? ts_basename : getfield(doc, field)
+        if field === :time_series_storage_file
+            ts_basename
+        else
+            getfield(doc, field)
+        end
     end
     return PD.SystemDocument(args...)
 end

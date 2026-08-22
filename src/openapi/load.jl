@@ -1,5 +1,3 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:468-491.
-#
 # RTS has no load.csv — its load lives on the bus rows and is emitted by
 # bus_csv_parser! — so this path exists for datasets that state loads separately.
 

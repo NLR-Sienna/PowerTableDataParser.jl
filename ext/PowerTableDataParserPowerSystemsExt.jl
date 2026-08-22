@@ -1,7 +1,6 @@
-# Pointer-file time series ingestion into a live `PowerSystems.System`, migrated from
-# PowerSystemCaseBuilder's `_add_time_series_from_pointers!`. Lives in an extension so
-# the core package keeps no PowerSystems dependency (the OpenAPI document path reads the
-# same pointer files without one).
+# Pointer-file time series ingestion into a live `PowerSystems.System`. Lives in an
+# extension so the core package keeps no PowerSystems dependency (the OpenAPI document
+# path reads the same pointer files without one).
 
 module PowerTableDataParserPowerSystemsExt
 
@@ -29,21 +28,19 @@ unrecognized value.
 function _pointer_component_type(category::AbstractString)
     sym = Symbol(category)
     isdefined(PSY, sym) || return PSY.Component
-    T = getproperty(PSY, sym)
-    return T isa Type ? T : PSY.Component
+    return _as_component_type(getproperty(PSY, sym))
 end
+
+_as_component_type(T::Type) = T
+_as_component_type(::Any) = PSY.Component
 
 """
 Read a `timeseries_pointers.json` metadata file and attach the referenced time series
 by reading each CSV directly and constructing `SingleTimeSeries` objects.
 
-This replaces the former file-metadata ingestion in InfrastructureSystems. A pointer that
-declares a multiplier stores its values normalized by `normalization_factor` — per unit on
-the owner's own base — and says so: `unit_system` is the component base and `quantity_kind`
-names the physical quantity the values scale to. That replaces the removed
-`scaling_factor_multiplier`, which named an accessor for a reader to resolve and multiply by
-on every read; the declaration carries the same meaning without the function name, and
-leaves the scaling to the consumer.
+A pointer that declares a multiplier stores its values normalized by `normalization_factor`
+— per unit on the owner's own base — and says so: `unit_system` is the component base and
+`quantity_kind` names the physical quantity the values scale to.
 
 `units` stays unset throughout: a per-unit basis is not a units label.
 
@@ -75,8 +72,8 @@ function PDP.add_time_series_from_pointers!(
         component_type = _pointer_component_type(String(entry["category"]))
         component = PSY.get_component(component_type, sys, component_name)
         isnothing(component) && continue
-        # The old file-metadata parser deduplicated (component, name) assignments;
-        # the rust store rejects duplicate associations, so skip repeats here.
+        # (component, name) pairs are recorded once: a repeat is skipped rather than
+        # assigned twice.
         key = (IS.get_id(component), name)
         key in seen && continue
         push!(seen, key)
@@ -103,13 +100,6 @@ function PDP.add_time_series_from_pointers!(
             ),
         )
         push!(associations, (component, series))
-
-        # A pointer on an AggregationTopology (a LoadZone/Area) with a max-power multiplier
-        # does not describe that topology's own device series: it is a normalized zonal
-        # *shape* that every load in the zone shares, each scaling it by its own peak. Every
-        # such load is associated with the very same series object, so the store keeps one
-        # array for all of them — the shape is one series, and materializing a scaled copy
-        # per load would both lose that and bake in a scaling the consumer now applies.
         _fan_out_aggregation_time_series!(associations, seen, sys, component, entry, series)
     end
     if !isempty(associations)
@@ -125,31 +115,27 @@ end
 """The multiplier a pointer entry declares, as a `String`, or `nothing`."""
 function _pointer_multiplier(entry)
     multiplier = get(entry, "scaling_factor_multiplier", nothing)
-    return isnothing(multiplier) ? nothing : String(multiplier)
+    if isnothing(multiplier)
+        return nothing
+    end
+    return String(multiplier)
 end
 
 """
 Apply the pointer's `normalization_factor`, making the values per unit on the owner's base.
 
 Only for an entry that declares a multiplier: without one the values are the device
-quantities the file states and nothing normalizes them. `"max"` divides by the series' own
-peak, a number divides by itself — the same semantics as the retired InfrastructureSystems
-file ingestion, and as [`PowerTableDataParser._normalized`](@ref) on the document path.
+quantities the file states and nothing normalizes them. The actual normalization is
+[`PowerTableDataParser._normalized`](@ref).
 """
 function _normalized(values::Vector{Float64}, factor, multiplier)
     isnothing(multiplier) && return values
-    if factor isa AbstractString
-        lowercase(factor) == "max" ||
-            throw(IS.DataFormatError("unsupported normalization_factor=$factor"))
-        return values ./ maximum(values)
-    end
-    iszero(factor) && throw(IS.DataFormatError("normalization_factor cannot be zero"))
-    return Float64(factor) == 1.0 ? values : values ./ Float64(factor)
+    return PDP._normalized(values, PDP._normalization_factor(factor))
 end
 
 """The basis the values are stored in: the component's own base once normalized, and
 nothing declared otherwise — which is deliberately not the same as natural units."""
-_series_unit_system(multiplier) = isnothing(multiplier) ? nothing : IS.DU
+_series_unit_system(multiplier) = PDP._series_unit_system(multiplier)
 
 """
 How the reservoir behind a reservoir-normalized entry accounts its levels.
@@ -160,23 +146,28 @@ circulation. Falls back to the system's reservoirs in that second case, and requ
 agree — with the owner not naming one, a mixed system gives no way to tell which convention
 applies.
 """
+_reservoir_level_data_type(::PSY.System, component::PSY.HydroReservoir) =
+    string(PSY.get_level_data_type(component))
+
 function _reservoir_level_data_type(sys::PSY.System, component)
-    component isa PSY.HydroReservoir &&
-        return string(PSY.get_level_data_type(component))
     level_types =
         unique(
             string(PSY.get_level_data_type(r))
             for r in PSY.get_components(PSY.HydroReservoir, sys)
         )
-    length(level_types) == 1 || throw(
-        IS.DataFormatError(
-            "a reservoir-normalized series is owned by a $(typeof(component)) rather than " *
-            "the reservoir, and the system's reservoirs state " *
-            "$(isempty(level_types) ? "no level_data_type" :
-               "several: $(join(sort(level_types), ", "))") — so the quantity its values " *
-            "scale to cannot be determined",
-        ),
-    )
+    if length(level_types) != 1
+        stated = "several: $(join(sort(level_types), ", "))"
+        if isempty(level_types)
+            stated = "no level_data_type"
+        end
+        throw(
+            IS.DataFormatError(
+                "a reservoir-normalized series is owned by a $(typeof(component)) rather " *
+                "than the reservoir, and the system's reservoirs state $stated — so the " *
+                "quantity its values scale to cannot be determined",
+            ),
+        )
+    end
     return only(level_types)
 end
 
@@ -196,9 +187,14 @@ bus in the topology follows, each against its own peak.
 store deduplicates to and what lets a consumer scale each load by its own base. No-op for
 any other pointer.
 """
-function _fan_out_aggregation_time_series!(associations, seen, sys::PSY.System, component,
-    entry, series::PSY.SingleTimeSeries)
-    component isa PSY.AggregationTopology || return
+function _fan_out_aggregation_time_series!(
+    associations,
+    seen,
+    sys::PSY.System,
+    component::PSY.AggregationTopology,
+    entry,
+    series::PSY.SingleTimeSeries,
+)
     multiplier = _pointer_multiplier(entry)
     multiplier in _AGGREGATION_LOAD_MULTIPLIERS || return
 
@@ -213,5 +209,14 @@ function _fan_out_aggregation_time_series!(associations, seen, sys::PSY.System, 
     end
     return
 end
+
+_fan_out_aggregation_time_series!(
+    associations,
+    seen,
+    ::PSY.System,
+    component,
+    entry,
+    series::PSY.SingleTimeSeries,
+) = nothing
 
 end

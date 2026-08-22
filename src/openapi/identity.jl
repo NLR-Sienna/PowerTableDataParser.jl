@@ -5,9 +5,8 @@ The schemas link components by integer id, but the tables link them three other
 ways: by bus number (`branch.csv` `From Bus`), by component name (`gen.csv`
 `GEN UID`), and by area or zone name. This translates all three.
 
-Ids come from a single counter shared by every type, matching GridDB's `entities`
-table where an id identifies a component without also needing its type. This is
-why a bus number cannot double as an id.
+Ids come from a single counter shared by every type: an id alone identifies a component
+without needing its type alongside it, which is why a bus number cannot double as an id.
 
 The counter itself lives on `document`: `PD.SystemDocument` owns id allocation
 for the document it produces, so this registry delegates every id it hands out

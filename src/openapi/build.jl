@@ -1,5 +1,3 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:120-160.
-#
 # Zones and buses are parsed unconditionally and in that order: a bus resolves its
 # load zone by name. Everything else is parsed only if its table has rows, which
 # is how a dataset like RTS — with no load.csv — passes through.
@@ -32,11 +30,7 @@ function build_openapi_system(
         (InputCategory.LOAD, load_csv_parser!),
         (InputCategory.RESERVE, services_csv_parser!),
     )
-    for (category, parser) in parsers
-        if !isempty(get_dataframe(data, category))
-            parser(sys, data)
-        end
-    end
+    _run_parsers!(sys, data, parsers)
 
     # Supplemental attributes describe components, so they run once those exist.
     attribute_parsers = (
@@ -45,15 +39,21 @@ function build_openapi_system(
         (InputCategory.GENERATOR, outages_csv_parser!),
         (InputCategory.BUS, ext_csv_parser!),
     )
-    for (category, parser) in attribute_parsers
-        if !isempty(get_dataframe(data, category))
-            parser(sys, data)
-        end
-    end
+    _run_parsers!(sys, data, attribute_parsers)
 
     if !isnothing(data.timeseries_metadata_file)
         add_time_series!(sys, data.timeseries_metadata_file)
     end
 
     return sys
+end
+
+"""Run each `(category, parser!)` pair whose category has rows."""
+function _run_parsers!(sys::OpenAPISystem, data::PowerSystemTableData, parsers)
+    for (category, parser) in parsers
+        if !isempty(get_dataframe(data, category))
+            parser(sys, data)
+        end
+    end
+    return
 end

@@ -27,9 +27,6 @@ const EMISSION_COLUMNS = [
 """Minutes in a year, for turning a per-year outage rate into a per-minute probability."""
 const MINUTES_PER_YEAR = 8760.0 * 60.0
 
-"""Minutes in an hour; both tables state their outage times in hours."""
-const MINUTES_PER_HOUR = 60.0
-
 """
 A constant emission rate as a value curve.
 
@@ -81,8 +78,7 @@ under one attribute per pollutant per unit.
 function emissions_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
     reg = get_registry(sys)
     for gen in iterate_rows(data, InputCategory.GENERATOR; per_unit = uses_per_unit(sys))
-        _, entity_id =
-            find_by_name(reg, category_to_type_names("Generator"), gen.name)
+        entity_id = _generator_entity(reg, gen)
         for (column, pollutant, label) in EMISSION_COLUMNS
             rate = _emission_rate(getproperty(gen, column), gen.name, label)
             if isnothing(rate) || iszero(rate)
@@ -124,13 +120,12 @@ function outages_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
         if isnothing(mttf) || isnothing(mttr) || iszero(mttf)
             continue
         end
-        _, entity_id =
-            find_by_name(reg, category_to_type_names("Generator"), gen.name)
+        entity_id = _generator_entity(reg, gen)
         _add_forced_outage!(
             sys,
             entity_id,
             mttr,
-            1.0 / (mttf * MINUTES_PER_HOUR),
+            1.0 / _hours_to_minutes(mttf),
         )
     end
 
@@ -140,8 +135,7 @@ function outages_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
         if isnothing(rate) || isnothing(duration) || iszero(rate)
             continue
         end
-        type_name = get_branch_type(branch.tap, get(branch, :is_transformer, nothing))
-        _, entity_id = find_by_name(reg, [string(type_name)], branch.name)
+        entity_id = _branch_entity(reg, branch)
         _add_forced_outage!(sys, entity_id, duration, rate / MINUTES_PER_YEAR)
     end
     return
@@ -157,9 +151,7 @@ function _add_forced_outage!(
     set_value!(attribute, :id, next_id!(get_registry(sys)))
     # The schema wants whole minutes, so the conversion is rounded before it is
     # assigned rather than left to a float that happens to look integral.
-    # `UNIT_VOCABULARY` carries no hour, so the hours→minutes step is done here
-    # rather than delegated to the unit layer.
-    minutes = round(Int, 60.0 * recovery_hours)
+    minutes = round(Int, _hours_to_minutes(recovery_hours))
     set_value!(attribute, :mean_time_to_recovery, minutes, "min")
     set_value!(attribute, :outage_transition_probability, transition_probability)
     set_value!(attribute, :monitored_components, Int[])
