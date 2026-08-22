@@ -36,7 +36,7 @@ PowerCoreOpenAPIModels = {path = "../PowerOpenAPIModels/PowerCoreOpenAPIModels.j
 PowerOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOpenAPIModels.jl"}
 PowerOperationsOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
 PowerTimeSeriesOpenAPIModels = {path = "../PowerOpenAPIModels/PowerTimeSeriesOpenAPIModels.jl"}
-InfrastructureSystems = {rev = "feat/infrastore-integration", url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl"}
+InfrastructureSystems = {rev = "IS4", url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl"}
 
 [compat]
 CSV = "~0.10"
