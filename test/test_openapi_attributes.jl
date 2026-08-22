@@ -53,7 +53,7 @@ end
 
     reg = PDP.get_registry(sys)
     by_entity = Dict(
-        a.entity_id => a.attribute_id for
+        a.component_id => a.attribute_id for
         a in PDP.get_supplemental_attribute_associations(sys)
     )
     attributes = Dict(PDP.get_value(o, :id) => o for o in outages)
@@ -114,9 +114,9 @@ end
           length(PDP.get_supplemental_attribute_associations(sys))
 
     for association in PDP.get_supplemental_attribute_associations(sys)
-        entity_id = PDP.get_value(association, :entity_id)
+        component_id = PDP.get_value(association, :component_id)
         attribute_id = PDP.get_value(association, :attribute_id)
-        @test entity_id in ids
+        @test component_id in ids
         @test (attribute_id in attribute_ids) || (attribute_id in ids)
     end
 end
@@ -157,6 +157,7 @@ end
         line_id = PDP.get_id(reg, "Line", "A1")
         @test doc["ext"][string(line_id)]["Length"] ≈ 3.0
         @test length(doc["supplemental_attributes"]) == 623
+        # One link row per attribute; the 510 service memberships are their own table now.
         @test length(doc["supplemental_attribute_associations"]) == 623
         @test length(doc["service_associations"]) == 510
     end

@@ -56,8 +56,9 @@ end
     reserve = first(PDP.get_components(sys, "OnlineReserve"))
     @test !hasproperty(reserve, :contributing_devices)
 
-    # Service membership is a ServiceAssociation row, in its own table rather than
-    # filtered out of the plain-attribute one.
+    # Membership has its own table: a service is a component, not a supplemental
+    # attribute, so the row's two ends resolve against different id sets. No filtering by
+    # attribute_type — every row here is a membership.
     service_rows = PDP.get_service_associations(sys)
     @test !isempty(service_rows)
     reserve_ids = Set(

@@ -1,8 +1,6 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:238-302.
-#
-# Divergence from PSCB: a transformer emits two components. The
-# electrical parameters and the arc live on a `TransformerCircuit`, which the
-# `TwoWindingTransformer` references by id. The circuit carries no name.
+# A transformer emits two components. The electrical parameters and the arc live on a
+# `TransformerCircuit`, which the `TwoWindingTransformer` references by id. The circuit
+# carries no name.
 
 """
 Classify a branch row as a `Line` or a `TwoWindingTransformer`.
@@ -129,10 +127,8 @@ function _add_transformer!(sys::OpenAPISystem, branch, arc::Int, from_kv, to_kv)
     set_value!(xfmr, :id, register!(reg, "TwoWindingTransformer", branch.name))
     set_value!(xfmr, :name, branch.name)
     set_value!(xfmr, :circuit, get_value(circuit, :id))
-    # The column is a susceptance, so it is the imaginary part of the admittance.
-    # PSCB assigns the scalar straight into a Complex field, which lands it in the
-    # real part instead; RTS states 0 for every transformer, so neither reading
-    # changes that dataset.
+    # The column is a susceptance, so it is the imaginary part of the admittance. RTS
+    # states 0 for every transformer, so this choice doesn't affect any current dataset.
     set_value!(xfmr, :magnetizing_shunt, (real = 0.0, imag = branch.primary_shunt), "pu")
     add_component!(sys, xfmr)
     return

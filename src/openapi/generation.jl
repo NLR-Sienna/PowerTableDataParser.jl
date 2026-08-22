@@ -1,8 +1,4 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:382-460
-# (column selection and storage caching), 659-700 (dispatch) and 975-1473 (the
-# per-type makers).
-#
-# Two deliberate divergences from PSCB:
+# Two deliberate choices:
 #   * dispatch is on `Val{type_name}` rather than an if/elseif chain over PSY
 #     DataTypes, since the mapping file resolves to a name here, not a type;
 #   * prime mover and fuel are enum strings, so the PSY enum lookups become
@@ -60,8 +56,8 @@ thermal_fuel(fuel::AbstractString) = _enum_value(THERMAL_FUEL_ALIASES, fuel)
 """
 Group the storage rows by position and generator name.
 
-PSCB returns a bare tuple when there is no storage table and a `Dict` otherwise;
-this always returns the `Dict` shape so callers have one thing to handle.
+Always returns the `Dict` shape, even with no storage table, so callers have one thing to
+handle.
 """
 function cache_storage(data::PowerSystemTableData; per_unit::Bool = false)
     storage = Dict(
@@ -117,8 +113,8 @@ end
 """
 Apparent power rating implied by the active and reactive maxima.
 
-A unit with neither is rated 1.0 rather than 0.0, matching PSCB: a zero rating
-divides through the per-unit conversions downstream.
+A unit with neither is rated 1.0 rather than 0.0: a zero rating divides through the
+per-unit conversions downstream.
 """
 function calculate_gen_rating(active_power_max::Real, reactive_power_max::Real)
     rating = sqrt(Float64(active_power_max)^2 + Float64(reactive_power_max)^2)
@@ -183,7 +179,7 @@ Device base power, substituting the system base for a unit that states none.
 
 The three RTS synchronous condensers carry `Base MVA = 0` upstream while injecting
 over 100 MVAr, and a zero base divides through every per-unit conversion
-downstream, so PSCB substitutes the system base here and this mirrors it.
+downstream, so the system base is substituted instead.
 """
 function device_base_power(sys::OpenAPISystem, gen::NamedTuple)
     base = _as_float(gen.base_mva)
@@ -192,14 +188,6 @@ function device_base_power(sys::OpenAPISystem, gen::NamedTuple)
         return get_base_power(sys)
     end
     return base
-end
-
-function _set_optional_limits!(component, prop::Symbol, limits, unit::AbstractString)
-    if isnothing(limits)
-        return
-    end
-    set_value!(component, prop, limits, unit)
-    return
 end
 
 function _active_power_limits(gen::NamedTuple)
@@ -231,9 +219,9 @@ function make_thermal_generator(
         "MVA",
     )
     set_value!(component, :active_power_limits, active_power_limits, "MW")
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
-    _set_optional_limits!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
-    _set_optional_limits!(
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
+    _set_optional!(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
@@ -275,7 +263,7 @@ function make_synchronous_condenser(
         calculate_gen_rating(_active_power_limits(gen), reactive_power_limits),
         "MVA",
     )
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
     set_value!(component, :base_power, device_base_power(sys, gen), "MVA")
     return component
 end
@@ -304,7 +292,7 @@ function make_renewable_generator(
         "MVA",
     )
     set_value!(component, :prime_mover_type, prime_mover_type(gen.unit_type))
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
     set_value!(component, :power_factor, gen.power_factor, "1")
     set_value!(
         component,
@@ -317,11 +305,11 @@ end
 
 function make_renewable_generator(
     sys::OpenAPISystem,
-    data::PowerSystemTableData,
+    ::PowerSystemTableData,
     gen::NamedTuple,
     bus_id::Int,
     ::Val{:RenewableNonDispatch},
-    cols,
+    ::Any,
 )
     reactive_power, reactive_power_limits = make_reactive_params(gen)
 
@@ -373,9 +361,9 @@ function make_hydro_dispatch(
     )
     set_value!(component, :prime_mover_type, prime_mover_type(gen.unit_type))
     set_value!(component, :active_power_limits, active_power_limits, "MW")
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
-    _set_optional_limits!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
-    _set_optional_limits!(
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
+    _set_optional!(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
@@ -496,15 +484,15 @@ function make_hydro_turbine(
         "MVA",
     )
     set_value!(component, :active_power_limits, active_power_limits, "MW")
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
     set_value!(component, :base_power, device_base_power(sys, gen), "MVA")
     set_value!(
         component,
         :operation_cost,
         make_hydro_cost(data, gen, cols; per_unit = uses_per_unit(sys)),
     )
-    _set_optional_limits!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
-    _set_optional_limits!(
+    _set_optional!(component, :ramp_limits, make_ramplimits(gen), "MW/min")
+    _set_optional!(
         component,
         :time_limits,
         make_timelimits(gen, :min_up_time, :min_down_time),
@@ -575,7 +563,7 @@ function make_storage(
         PC.InOut(; in = row.input_efficiency, out = row.output_efficiency),
     )
     set_value!(component, :reactive_power, reactive_power, "MVAr")
-    _set_optional_limits!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
+    _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
     set_value!(component, :base_power, row.base_power, "MVA")
     set_value!(component, :operation_cost, PC.StorageCost(; start_up = 0.0))
     return component

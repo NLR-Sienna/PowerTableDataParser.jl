@@ -12,7 +12,7 @@ end
 @testset "the container states its convention and rejects an unknown one" begin
     @test PDP.get_unit_system(PDP.OpenAPISystem(100.0)) == "NATURAL_UNITS"
     @test !PDP.uses_per_unit(PDP.OpenAPISystem(100.0))
-    @test PDP.uses_per_unit(PDP.OpenAPISystem(100.0; unit_system = "DEVICE_BASE"))
+    @test PDP.uses_per_unit(PDP.OpenAPISystem(100.0; unit_system = "COMPONENT_BASE"))
     # SYSTEM_BASE is a UnitSystem value the parsers cannot produce.
     @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; unit_system = "SYSTEM_BASE")
     @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; unit_system = "PU")
@@ -20,7 +20,7 @@ end
 
 @testset "generator power quantities move onto the device base" begin
     natural = _named(_system("NATURAL_UNITS"), "ThermalStandard", "101_STEAM_3")
-    per_unit = _named(_system("DEVICE_BASE"), "ThermalStandard", "101_STEAM_3")
+    per_unit = _named(_system("COMPONENT_BASE"), "ThermalStandard", "101_STEAM_3")
 
     @test PDP.get_value(natural, :active_power_limits).max ≈ 76.0
     # 76 MW on an 89 MVA machine.
@@ -35,7 +35,7 @@ end
 
 @testset "quantities the tables already state per unit are untouched" begin
     natural = _named(_system("NATURAL_UNITS"), "Line", "A1")
-    per_unit = _named(_system("DEVICE_BASE"), "Line", "A1")
+    per_unit = _named(_system("COMPONENT_BASE"), "Line", "A1")
     for property in (:r, :x)
         @test PDP.get_value(natural, property) == PDP.get_value(per_unit, property)
     end
@@ -47,7 +47,7 @@ end
 
     # Angles are an absolute unit in both conventions.
     natural_bus = _named(_system("NATURAL_UNITS"), "ACBus", "Abel")
-    per_unit_bus = _named(_system("DEVICE_BASE"), "ACBus", "Abel")
+    per_unit_bus = _named(_system("COMPONENT_BASE"), "ACBus", "Abel")
     @test PDP.get_value(natural_bus, :angle) == PDP.get_value(per_unit_bus, :angle)
     @test PDP.get_value(natural_bus, :base_voltage) ==
           PDP.get_value(per_unit_bus, :base_voltage)
@@ -56,13 +56,13 @@ end
 
 @testset "loads and reserves follow the descriptors' own targets" begin
     natural = _named(_system("NATURAL_UNITS"), "PowerLoad", "Abel")
-    per_unit = _named(_system("DEVICE_BASE"), "PowerLoad", "Abel")
+    per_unit = _named(_system("COMPONENT_BASE"), "PowerLoad", "Abel")
     @test PDP.get_value(natural, :max_active_power) ≈ 108.0
     # The bus load's base is the system base.
     @test PDP.get_value(per_unit, :max_active_power) ≈ 1.08
 
     natural_reserve = _named(_system("NATURAL_UNITS"), "OnlineReserve", "Spin_Up_R1")
-    per_unit_reserve = _named(_system("DEVICE_BASE"), "OnlineReserve", "Spin_Up_R1")
+    per_unit_reserve = _named(_system("COMPONENT_BASE"), "OnlineReserve", "Spin_Up_R1")
     @test PDP.get_value(natural_reserve, :requirement) ≈ 40.413
     @test PDP.get_value(per_unit_reserve, :requirement) ≈ 0.40413
     # The time frame is a duration, not a power.
@@ -92,7 +92,7 @@ end
 end
 
 @testset "the document states the convention it was written in" begin
-    for unit_system in ("NATURAL_UNITS", "DEVICE_BASE")
+    for unit_system in ("NATURAL_UNITS", "COMPONENT_BASE")
         sys = _system(unit_system)
         mktempdir() do dir
             path = joinpath(dir, "rts.json")
@@ -100,6 +100,8 @@ end
             doc = JSON.parse(read(path, String))
             @test doc["unit_system"] == unit_system
             @test length(doc["components"]["ACBus"]) == 73
+            # The rows ride in both conventions; the document's own unit_system governs
+            # component values, while each row states the basis of its series.
             @test length(doc["time_series_associations"]) == 362
         end
     end
@@ -107,7 +109,7 @@ end
 
 @testset "the convention changes values, never the structure" begin
     natural = _system("NATURAL_UNITS")
-    per_unit = _system("DEVICE_BASE")
+    per_unit = _system("COMPONENT_BASE")
     @test PDP.component_type_names(natural) == PDP.component_type_names(per_unit)
     for type_name in PDP.component_type_names(natural)
         left = PDP.get_components(natural, type_name)
@@ -116,6 +118,5 @@ end
         @test [PDP.get_value(c, :id) for c in left] ==
               [PDP.get_value(c, :id) for c in right]
     end
-    @test length(PDP.get_time_series_associations(natural)) ==
-          length(PDP.get_time_series_associations(per_unit))
+    @test length(natural.time_series) == length(per_unit.time_series)
 end

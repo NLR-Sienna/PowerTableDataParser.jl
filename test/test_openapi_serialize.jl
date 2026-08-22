@@ -16,13 +16,14 @@ end
     @test PDP.time_series_filename("/a/b/rts.json") == "rts_time_series_storage.h5"
 end
 
-@testset "to_json writes both files" begin
+@testset "to_json writes the document and the sidecar pair" begin
     sys = _rts_system()
     mktempdir() do dir
         path = joinpath(dir, "rts.json")
         PDP.to_json(sys, path)
         @test isfile(path)
         @test isfile(joinpath(dir, "rts_time_series_storage.h5"))
+        @test isfile(joinpath(dir, "rts_time_series_storage.h5.sqlite"))
     end
 end
 
@@ -31,7 +32,7 @@ end
     mktempdir() do dir
         path = joinpath(dir, "x.json")
         PDP.to_json(sys, path)
-        # PC.write_document owns the "already exists" check for the JSON path now.
+        # PD.write_document owns the "already exists" check for the JSON path now.
         @test_throws PDP.PC.DocumentFormatError PDP.to_json(sys, path)
         PDP.to_json(sys, path; force = true)
         @test isfile(path)
@@ -52,9 +53,54 @@ end
     @test doc["base_power"] == 100.0
     @test doc["time_series_storage_file"] == "rts_time_series_storage.h5"
     @test length(doc["components"]["ACBus"]) == 73
-    @test length(doc["time_series_associations"]) == 362
+    # One row per staged series. The sidecar holds the values; these rows let a consumer see
+    # what the bundle contains, and on what basis, without opening the store.
+    rows = doc["time_series_associations"]
+    @test length(rows) == 362
+    row = first(rows)
+    @test row["time_series_type"] == "SingleTimeSeries"
+    @test row["owner_category"] == "Component"
+    @test row["unit_system"] == "COMPONENT_BASE"
+    @test !isempty(row["name"])
+    # Every row points at a component the document declares.
+    component_ids = Set(
+        c["id"] for (_type, bucket) in doc["components"] for c in bucket
+    )
+    @test all(r -> r["owner_id"] in component_ids, rows)
     @test haskey(doc, "supplemental_attributes")
     @test haskey(doc, "supplemental_attribute_associations")
+end
+
+@testset "the sidecar catalog is authoritative for supplemental-attribute associations" begin
+    sys = _rts_system()
+    mktempdir() do dir
+        path = joinpath(dir, "rts.json")
+        PDP.to_json(sys, path)
+        doc = JSON.parse(read(path, String))
+        doc_associations = doc["supplemental_attribute_associations"]
+        @test !isempty(doc_associations)
+
+        store = IS.open_infrastore_store(
+            joinpath(dir, "rts_time_series_storage.h5");
+            read_only = true,
+        )
+        try
+            store_rows = IS.openapi_supplemental_attribute_association_rows(store)
+            @test length(store_rows) == length(doc_associations)
+            key(row) =
+                (row.component_id, row.component_type, row.attribute_id, row.attribute_type)
+            doc_key(row) =
+                (
+                    row["component_id"],
+                    row["component_type"],
+                    row["attribute_id"],
+                    row["attribute_type"],
+                )
+            @test Set(key.(store_rows)) == Set(doc_key.(doc_associations))
+        finally
+            IS.close!(store)
+        end
+    end
 end
 
 @testset "nested cost objects survive one level of encoding" begin
@@ -67,15 +113,6 @@ end
     @test cost["variable"]["variable_cost_type"] == "FUEL"
     @test cost["variable"]["value_curve"]["curve_type"] == "INCREMENTAL"
     @test cost["variable"]["value_curve"]["function_data"]["x_coords"] isa Vector
-end
-
-@testset "an association timestamp is an ISO 8601 string" begin
-    doc = _round_trip(_rts_system())
-    association = doc["time_series_associations"][1]
-    @test association["initial_timestamp"] isa String
-    @test occursin("T", association["initial_timestamp"])
-    @test endswith(association["initial_timestamp"], "+00:00")
-    @test association["resolution"] in ("PT3600S", "PT300S")
 end
 
 @testset "unset optional properties are omitted, not null" begin

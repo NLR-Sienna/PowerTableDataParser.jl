@@ -1,20 +1,8 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl
-# (bus_csv_parser! and the load-zone accumulation it performs inline).
-#
 # Every parser reads rows under the system's unit convention. The default
 # suppresses the descriptors' rebasing, which is what the schemas want: natural
 # units for power, and per-unit only where the raw column already is per-unit.
-# A DEVICE_BASE system applies the rebasing instead, reproducing what
+# A COMPONENT_BASE system applies the rebasing instead, reproducing what
 # PowerSystems stores. See `iterate_rows` and `uses_per_unit`.
-#
-# FixedAdmittance: this package's own bundled test descriptor
-# (test/descriptors/rts_user_descriptors.yaml) maps shunt columns to names
-# absent from power_system_inputs.json (`mw_shunt_g`/`mvar_shut_b`, the latter
-# a typo), so shunt_g and shunt_b always hold their 0 defaults for that fixture
-# and no FixedAdmittance is ever emitted from it. Real RTS-GMLC-0.2.3 data (the
-# artifact PowerSystemCaseBuilder's RTS fixtures build from) maps the same
-# columns correctly and carries nonzero shunt admittance on 3 buses — see
-# `_add_fixed_admittance!` below.
 
 function _zone_name(bus)
     return string(get(bus, :zone, "zone"))
@@ -65,8 +53,8 @@ end
 """
 Return the id of the named `Area`, creating it on first sight.
 
-An area takes its peak from the buses it holds, exactly as a zone does. PSCB
-leaves both at zero; the bus rows carry the data either way.
+An area takes its peak from the buses it holds, exactly as a zone does; a name absent from
+`peaks` defaults to zero, since the bus rows carry the load data either way.
 """
 function _ensure_area!(sys::OpenAPISystem, name::AbstractString, peaks)
     reg = get_registry(sys)
@@ -90,12 +78,12 @@ end
 Create a `FixedAdmittance` for a bus carrying nonzero shunt admittance.
 
 `bus.shunt_g`/`bus.shunt_b` arrive on whatever basis `per_unit` implies (same
-`iterate_rows` toggle every other bus field uses): under a DEVICE_BASE system
+`iterate_rows` toggle every other bus field uses): under a COMPONENT_BASE system
 they are pre-divided by the system base — a shunt has no device MVA rating of
 its own to per-unitize against — and under a NATURAL_UNITS system they are the
 raw PSS/E-native MW/MVAr values.
 
-Both are emitted as `DEVICE_MVAR`, the only basis the schemas offer that needs
+Both are emitted as `COMPONENT_MVAR`, the only basis the schemas offer that needs
 no base voltage: a pu admittance on the system base times that base power is the
 shunt's MW/MVAr at 1.0 pu voltage, which is what the raw columns already hold.
 `NATURAL_UNITS` would mean siemens and would require the bus base voltage.
@@ -113,7 +101,7 @@ function _add_fixed_admittance!(sys::OpenAPISystem, reg, bus, bus_id::Int, per_u
     set_value!(shunt, :name, bus.name)
     set_value!(shunt, :available, true)
     set_value!(shunt, :bus, bus_id)
-    set_value!(shunt, :admittance_units, "DEVICE_MVAR")
+    set_value!(shunt, :admittance_units, "COMPONENT_MVAR")
     set_value!(
         shunt,
         :Y,

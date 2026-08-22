@@ -1,8 +1,6 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:534-655.
-#
 # Reserve-to-device contribution is a many-to-many relation, emitted as rows in the unified
 # `supplemental_attribute_associations` table: one row per pair, `attribute_type` naming
-# the service's own type. PSCB resolves it against a built `System`; here it is resolved
+# the service's own type. There is no built `System` yet at this stage, so it is resolved
 # against the tables and the id registry, which is why the eligibility rules are re-evaluated
 # rather than read off components.
 
@@ -65,25 +63,65 @@ function _tuple_column(value)
 end
 
 """
-Area of the bus a generator row sits on, as a string, for matching `eligible_regions`.
+Bus id to area label, for matching `eligible_regions`.
 
-The reserve tables state regions as area labels while the generator row names only its
-bus, so the bus table is the join.
+The reserve tables state regions as area labels while a generator row names only its bus,
+so the bus table is the join. Built once per `services_csv_parser!` call rather than
+filtered per generator, since a reserve's eligibility check runs it once per generator.
 """
-function _generator_area(data::PowerSystemTableData, bus_number::Int)
+function _bus_areas(data::PowerSystemTableData)
     buses = get_dataframe(data, InputCategory.BUS)
     id_column = get_user_field(data, InputCategory.BUS, "bus_id")
     area_column = get_user_field(data, InputCategory.BUS, "area")
-    rows = buses[buses[!, id_column] .== bus_number, area_column]
-    if isempty(rows)
+    return Dict(
+        Int(row[id_column]) => string(row[area_column]) for
+        row in DataFrames.eachrow(buses)
+    )
+end
+
+function _generator_area(bus_areas::Dict{Int, String}, bus_number::Int)
+    haskey(bus_areas, bus_number) ||
         throw(IS.DataFormatError("no bus row for bus_id=$bus_number"))
-    end
-    return string(rows[1])
+    return bus_areas[bus_number]
+end
+
+"""
+One generator's type category and its bus's area, keyed for the fallback eligibility
+check (`_add_reserve_membership!` with no explicit `contributing_devices`).
+
+Built once per `services_csv_parser!` call. That fallback rule re-evaluates `category
+in eligible_device_subcategories` and `area in eligible_regions` per reserve, and
+several RTS reserves take this path; rescanning the GENERATOR table (and re-deriving
+its field infos, re-emitting its "column not in dataframe" warnings) once per such
+reserve is redundant when the generator set doesn't change between reserves.
+"""
+struct _GeneratorMembership
+    name::String
+    category::String
+    area::String
+end
+
+function _generator_memberships(
+    data::PowerSystemTableData,
+    bus_areas::Dict{Int, String},
+    per_unit::Bool,
+)
+    return [
+        _GeneratorMembership(
+            string(gen.name),
+            string(gen.category),
+            _generator_area(bus_areas, Int(gen.bus_id)),
+        ) for gen in iterate_rows(data, InputCategory.GENERATOR; per_unit = per_unit)
+    ]
 end
 
 """Resolve `device_name` to its registered id, or error if it isn't registered yet."""
 function _contributing_device_id(reg::IdRegistry, device_types, device_name, reserve_name)
-    if !any(type_name -> has_id(reg, type_name, device_name), device_types)
+    try
+        _, entity_id = find_by_name(reg, device_types, device_name)
+        return entity_id
+    catch e
+        e isa IS.DataFormatError || rethrow()
         throw(
             IS.DataFormatError(
                 "reserve $reserve_name matched contributing device $device_name, but no " *
@@ -92,21 +130,19 @@ function _contributing_device_id(reg::IdRegistry, device_types, device_name, res
             ),
         )
     end
-    _, entity_id = find_by_name(reg, device_types, device_name)
-    return entity_id
 end
 
 """
 Emit one service-association row per (reserve, contributing device) pair.
 
-Mirrors PSCB's rule: an explicit `contributing_devices` list wins, and otherwise a
-generator contributes when its `category` is in `eligible_device_subcategories` **and**
-its bus's area is in `eligible_regions`. Both are re-evaluated from the tables because at
-this stage there is no `System` to read membership off.
+An explicit `contributing_devices` list wins, and otherwise a generator contributes when
+its `category` is in `eligible_device_subcategories` **and** its bus's area is in
+`eligible_regions`. Both are re-evaluated from the tables because at this stage there is no
+`System` to read membership off.
 """
 function _add_reserve_membership!(
     sys::OpenAPISystem,
-    data::PowerSystemTableData,
+    generator_memberships::Vector{_GeneratorMembership},
     reserve,
     service_id::Int,
 )
@@ -125,11 +161,11 @@ function _add_reserve_membership!(
     end
 
     regions = _tuple_column(reserve.eligible_regions)
-    for gen in iterate_rows(data, InputCategory.GENERATOR; per_unit = uses_per_unit(sys))
-        if !(string(gen.category) in subcategories)
+    for gen in generator_memberships
+        if !(gen.category in subcategories)
             continue
         end
-        if !(_generator_area(data, Int(gen.bus_id)) in regions)
+        if !(gen.area in regions)
             continue
         end
         entity_id = _contributing_device_id(reg, device_types, gen.name, reserve.name)
@@ -139,9 +175,11 @@ function _add_reserve_membership!(
 end
 
 function services_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
+    bus_areas = _bus_areas(data)
+    generator_memberships = _generator_memberships(data, bus_areas, uses_per_unit(sys))
     for reserve in iterate_rows(data, InputCategory.RESERVE; per_unit = uses_per_unit(sys))
         service_id = _add_reserve!(sys, reserve)
-        _add_reserve_membership!(sys, data, reserve, service_id)
+        _add_reserve_membership!(sys, generator_memberships, reserve, service_id)
     end
     return
 end

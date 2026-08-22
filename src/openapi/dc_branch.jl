@@ -1,5 +1,3 @@
-# Ported from PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl:307-369.
-#
 # The target is TwoTerminalGenericHVDCLine. The LCC model is unreachable from
 # table data: commutating resistances, bridge counts and DC voltages are columns
 # in dc_branch.csv that the input descriptors do not expose, so `control_mode`

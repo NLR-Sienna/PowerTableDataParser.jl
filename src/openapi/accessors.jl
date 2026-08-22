@@ -1,10 +1,5 @@
-# Descriptor-driven table access, ported from
-# PowerSystemCaseBuilder/src/parsers/power_system_table_data.jl (lines 15-90 and
-# 1493-1671) and .../common.jl (lines 102-130 and 180-252).
-#
-# The one deliberate divergence: get_generator_type returns the mapped type name
-# as a String. PSCB resolves it to a PowerSystems DataType via getfield, which
-# PTDP cannot do and does not need to.
+# get_generator_type returns the mapped type name as a String rather than resolving it to
+# a PowerSystems type, since this package does not depend on PowerSystems.
 
 """
 Return the mapped component type name for a fuel and unit type.
@@ -141,8 +136,8 @@ function get_dataframe(data::PowerSystemTableData, category::InputCategory)
 end
 
 """
-Return a NamedTuple of parameters from the descriptor file for each row of a
-dataframe, making type conversions as necessary.
+Return a Vector of NamedTuples, one per row of a dataframe, holding the parameters
+declared in the descriptor file with type conversions applied.
 
 `extras = true` adds an `ext` entry holding every column the descriptors do not
 declare, so a table can carry data the data model has no field for without it
@@ -163,18 +158,29 @@ function iterate_rows(
     extras = false,
 )
     df = get_dataframe(data, category)
-    field_infos =
-        _get_field_infos(data, category, DataFrames.names(df); per_unit = per_unit)
+    df_names = Set(DataFrames.names(df))
+    field_infos = _get_field_infos(data, category, df_names; per_unit = per_unit)
+    # Invariant across every row of this call, so this is where it's built: once, not
+    # once per row (`_read_data_row` used to rebuild the same Symbol tuple per row).
+    field_names = Tuple(Symbol(field_info.name) for field_info in field_infos)
     declared = Set(field_info.custom_name for field_info in field_infos)
-    Channel() do channel
-        for row in DataFrames.eachrow(df)
-            obj = _read_data_row(data, row, field_infos; na_to_nothing = na_to_nothing)
-            if extras
-                obj = merge(obj, (ext = _extra_columns(row, declared),))
-            end
-            put!(channel, obj)
+
+    function row_object(row)
+        obj = _read_data_row(
+            data,
+            row,
+            field_infos,
+            field_names,
+            df_names;
+            na_to_nothing = na_to_nothing,
+        )
+        if extras
+            return merge(obj, (ext = _extra_columns(row, declared, df_names),))
         end
+        return obj
     end
+
+    return [row_object(row) for row in DataFrames.eachrow(df)]
 end
 
 """
@@ -183,9 +189,9 @@ Columns of a row that no descriptor field claims.
 Empty cells are left out rather than recorded as blanks: an absent value and an
 empty string are not the same statement about the data.
 """
-function _extra_columns(row, declared::Set{String})
+function _extra_columns(row, declared::Set{String}, df_names::Set{String})
     extras = Dict{String, Any}()
-    for name in DataFrames.names(row)
+    for name in df_names
         if name in declared
             continue
         end
@@ -306,12 +312,34 @@ function _get_field_infos(
     return fields
 end
 
-"""Reads values from dataframe row and performs necessary conversions."""
-function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_nothing = true)
-    fields = Vector{String}()
-    vals = Vector()
-    for field_info in field_infos
-        if field_info.custom_name in DataFrames.names(row)
+_coerce_numeric(value::AbstractString) = tryparse(Float64, value)
+_coerce_numeric(value) = value
+
+function _divide_or_zero(value, denominator)
+    if iszero(denominator)
+        return 0.0
+    end
+    return value / denominator
+end
+
+"""
+Reads values from dataframe row and performs necessary conversions.
+
+`field_names` is the Symbol tuple naming the result, in the same order as
+`field_infos`; the caller builds it once per `_get_field_infos` result rather than
+here, since it is identical for every row of a call.
+"""
+function _read_data_row(
+    data::PowerSystemTableData,
+    row,
+    field_infos,
+    field_names::Tuple,
+    df_names::Set{String};
+    na_to_nothing = true,
+)
+    vals = Vector{Any}(undef, length(field_infos))
+    for (i, field_info) in enumerate(field_infos)
+        if field_info.custom_name in df_names
             value = row[field_info.custom_name]
         else
             value = field_info.default_value
@@ -332,8 +360,8 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
                field_info.per_unit_conversion.To == IS.UnitSystem.SYSTEM_BASE
                 @debug "convert to $(field_info.per_unit_conversion.To)" _group =
                     IS.LOG_GROUP_PARSING field_info.custom_name
-                value = value isa AbstractString ? tryparse(Float64, value) : value
-                value = data.base_power == 0.0 ? 0.0 : value / data.base_power
+                value = _coerce_numeric(value)
+                value = _divide_or_zero(value, data.base_power)
             elseif field_info.per_unit_conversion.From == IS.UnitSystem.NATURAL_UNITS &&
                    field_info.per_unit_conversion.To == IS.UnitSystem.DEVICE_BASE
                 reference_idx = findfirst(
@@ -355,8 +383,8 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
                         "$(reference_info.name) is required for p.u. conversion",
                     ),
                 )
-                value = value isa AbstractString ? tryparse(Float64, value) : value
-                value = reference_value == 0.0 ? 0.0 : value / reference_value
+                value = _coerce_numeric(value)
+                value = _divide_or_zero(value, reference_value)
             elseif field_info.per_unit_conversion.From != field_info.per_unit_conversion.To
                 throw(
                     IS.DataFormatError(
@@ -374,8 +402,7 @@ function _read_data_row(data::PowerSystemTableData, row, field_infos; na_to_noth
                 1
             value = convert_units!(value, field_info.unit_conversion)
         end
-        push!(fields, field_info.name)
-        push!(vals, value)
+        vals[i] = value
     end
-    return NamedTuple{Tuple(Symbol.(fields))}(vals)
+    return NamedTuple{field_names}(Tuple(vals))
 end

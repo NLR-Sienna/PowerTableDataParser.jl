@@ -1,10 +1,9 @@
 """
 Unit-checked assignment onto generated OpenAPI components.
 
-Components are built empty and populated one property at a time, mirroring how
-OpenAPI.jl itself deserializes them (`from_json(T(), json)` then per-property).
-Every numeric assignment names the unit of the incoming value; the declared unit
-comes from the schema annotations generated into PowerOpenAPIModels.
+Components are built empty and populated one property at a time. Every numeric
+assignment names the unit of the incoming value; the declared unit comes from the schema
+annotations generated into PowerOpenAPIModels.
 
 The two arities are the enforcement. A property that declares a unit can only be
 written by the 4-argument form, and one that does not can only be written by the

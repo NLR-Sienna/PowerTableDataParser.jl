@@ -5,13 +5,15 @@ using PowerTableDataParser
 import InfrastructureSystems
 import DataFrames
 import LazyArtifacts
-import HDF5
 import JSON
 import OpenAPI
-import TimeZones
 
 const IS = InfrastructureSystems
 const PDP = PowerTableDataParser
+# The store backend, reached through IS's namespace: the package under test never
+# imports it, but the tests read the emitted artifacts back with the backend's
+# own API to verify them independently of the writer.
+const InfraStore = IS.InfraStore
 
 import Aqua
 Aqua.test_unbound_args(PowerTableDataParser)
