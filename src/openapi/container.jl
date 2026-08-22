@@ -118,19 +118,11 @@ needed here.
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
 device can match one reserve twice, and silently collapsing that would hide a malformed
-rule set.
+rule set. The rejection itself is `PD.add_service_association!`'s job — it holds the O(1)
+membership check against `service_membership`, so this wrapper does not rescan
+`service_associations` before delegating.
 """
 function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id::Int)
-    for existing in get_service_associations(sys)
-        if get_value(existing, :service_id) == service_id &&
-           get_value(existing, :entity_id) == entity_id
-            throw(
-                IS.DataFormatError(
-                    "duplicate service membership: service_id=$service_id entity_id=$entity_id",
-                ),
-            )
-        end
-    end
     PD.add_service_association!(
         get_document(sys),
         PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
