@@ -85,6 +85,36 @@ function _generator_area(bus_areas::Dict{Int, String}, bus_number::Int)
     return bus_areas[bus_number]
 end
 
+"""
+One generator's type category and its bus's area, keyed for the fallback eligibility
+check (`_add_reserve_membership!` with no explicit `contributing_devices`).
+
+Built once per `services_csv_parser!` call. That fallback rule re-evaluates `category
+in eligible_device_subcategories` and `area in eligible_regions` per reserve, and
+several RTS reserves take this path; rescanning the GENERATOR table (and re-deriving
+its field infos, re-emitting its "column not in dataframe" warnings) once per such
+reserve is redundant when the generator set doesn't change between reserves.
+"""
+struct _GeneratorMembership
+    name::String
+    category::String
+    area::String
+end
+
+function _generator_memberships(
+    data::PowerSystemTableData,
+    bus_areas::Dict{Int, String},
+    per_unit::Bool,
+)
+    return [
+        _GeneratorMembership(
+            string(gen.name),
+            string(gen.category),
+            _generator_area(bus_areas, Int(gen.bus_id)),
+        ) for gen in iterate_rows(data, InputCategory.GENERATOR; per_unit = per_unit)
+    ]
+end
+
 """Resolve `device_name` to its registered id, or error if it isn't registered yet."""
 function _contributing_device_id(reg::IdRegistry, device_types, device_name, reserve_name)
     try
@@ -112,8 +142,7 @@ its `category` is in `eligible_device_subcategories` **and** its bus's area is i
 """
 function _add_reserve_membership!(
     sys::OpenAPISystem,
-    data::PowerSystemTableData,
-    bus_areas::Dict{Int, String},
+    generator_memberships::Vector{_GeneratorMembership},
     reserve,
     service_id::Int,
 )
@@ -132,11 +161,11 @@ function _add_reserve_membership!(
     end
 
     regions = _tuple_column(reserve.eligible_regions)
-    for gen in iterate_rows(data, InputCategory.GENERATOR; per_unit = uses_per_unit(sys))
-        if !(string(gen.category) in subcategories)
+    for gen in generator_memberships
+        if !(gen.category in subcategories)
             continue
         end
-        if !(_generator_area(bus_areas, Int(gen.bus_id)) in regions)
+        if !(gen.area in regions)
             continue
         end
         entity_id = _contributing_device_id(reg, device_types, gen.name, reserve.name)
@@ -147,9 +176,10 @@ end
 
 function services_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
     bus_areas = _bus_areas(data)
+    generator_memberships = _generator_memberships(data, bus_areas, uses_per_unit(sys))
     for reserve in iterate_rows(data, InputCategory.RESERVE; per_unit = uses_per_unit(sys))
         service_id = _add_reserve!(sys, reserve)
-        _add_reserve_membership!(sys, data, bus_areas, reserve, service_id)
+        _add_reserve_membership!(sys, generator_memberships, reserve, service_id)
     end
     return
 end

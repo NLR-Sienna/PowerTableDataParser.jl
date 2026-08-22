@@ -136,8 +136,8 @@ function get_dataframe(data::PowerSystemTableData, category::InputCategory)
 end
 
 """
-Return a NamedTuple of parameters from the descriptor file for each row of a
-dataframe, making type conversions as necessary.
+Return a Vector of NamedTuples, one per row of a dataframe, holding the parameters
+declared in the descriptor file with type conversions applied.
 
 `extras = true` adds an `ext` entry holding every column the descriptors do not
 declare, so a table can carry data the data model has no field for without it
@@ -160,22 +160,27 @@ function iterate_rows(
     df = get_dataframe(data, category)
     df_names = Set(DataFrames.names(df))
     field_infos = _get_field_infos(data, category, df_names; per_unit = per_unit)
+    # Invariant across every row of this call, so this is where it's built: once, not
+    # once per row (`_read_data_row` used to rebuild the same Symbol tuple per row).
+    field_names = Tuple(Symbol(field_info.name) for field_info in field_infos)
     declared = Set(field_info.custom_name for field_info in field_infos)
-    Channel() do channel
-        for row in DataFrames.eachrow(df)
-            obj = _read_data_row(
-                data,
-                row,
-                field_infos,
-                df_names;
-                na_to_nothing = na_to_nothing,
-            )
-            if extras
-                obj = merge(obj, (ext = _extra_columns(row, declared, df_names),))
-            end
-            put!(channel, obj)
+
+    function row_object(row)
+        obj = _read_data_row(
+            data,
+            row,
+            field_infos,
+            field_names,
+            df_names;
+            na_to_nothing = na_to_nothing,
+        )
+        if extras
+            return merge(obj, (ext = _extra_columns(row, declared, df_names),))
         end
+        return obj
     end
+
+    return [row_object(row) for row in DataFrames.eachrow(df)]
 end
 
 """
@@ -317,17 +322,23 @@ function _divide_or_zero(value, denominator)
     return value / denominator
 end
 
-"""Reads values from dataframe row and performs necessary conversions."""
+"""
+Reads values from dataframe row and performs necessary conversions.
+
+`field_names` is the Symbol tuple naming the result, in the same order as
+`field_infos`; the caller builds it once per `_get_field_infos` result rather than
+here, since it is identical for every row of a call.
+"""
 function _read_data_row(
     data::PowerSystemTableData,
     row,
     field_infos,
+    field_names::Tuple,
     df_names::Set{String};
     na_to_nothing = true,
 )
-    fields = Vector{String}()
-    vals = Vector()
-    for field_info in field_infos
+    vals = Vector{Any}(undef, length(field_infos))
+    for (i, field_info) in enumerate(field_infos)
         if field_info.custom_name in df_names
             value = row[field_info.custom_name]
         else
@@ -391,8 +402,7 @@ function _read_data_row(
                 1
             value = convert_units!(value, field_info.unit_conversion)
         end
-        push!(fields, field_info.name)
-        push!(vals, value)
+        vals[i] = value
     end
-    return NamedTuple{Tuple(Symbol.(fields))}(vals)
+    return NamedTuple{field_names}(Tuple(vals))
 end
