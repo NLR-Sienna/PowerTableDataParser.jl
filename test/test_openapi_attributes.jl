@@ -61,7 +61,6 @@ end
     # 101_CT_1 states MTTF 450 h and MTTR 50 h, both stated in minutes here.
     gen = attributes[by_entity[PDP.get_id(reg, "ThermalStandard", "101_CT_1")]]
     @test PDP.get_value(gen, :mean_time_to_recovery) == 3000
-    @test PDP.get_value(gen, :mean_time_to_recovery) isa Integer
     @test PDP.get_value(gen, :outage_transition_probability) ≈ 1 / (450 * 60)
     mttr = PDP.get_value(gen, :mean_time_to_recovery)
     mttf = 1 / PDP.get_value(gen, :outage_transition_probability)

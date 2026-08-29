@@ -150,8 +150,8 @@ function _add_forced_outage!(
     attribute = PO.GeometricDistributionForcedOutage()
     set_value!(attribute, :id, next_id!(get_registry(sys)))
     # The schema wants whole minutes, so the conversion is rounded before it is
-    # assigned rather than left to a float that happens to look integral.
-    minutes = round(Int, _hours_to_minutes(recovery_hours))
+    # assigned rather than left to a float with spurious sub-minute precision.
+    minutes = round(_hours_to_minutes(recovery_hours))
     set_value!(attribute, :mean_time_to_recovery, minutes, "min")
     set_value!(attribute, :outage_transition_probability, transition_probability)
     set_value!(attribute, :monitored_components, Int[])
