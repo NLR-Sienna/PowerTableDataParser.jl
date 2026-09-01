@@ -33,7 +33,7 @@ end
         path = joinpath(dir, "x.json")
         PDP.to_json(sys, path)
         # PD.write_document owns the "already exists" check for the JSON path now.
-        @test_throws PDP.PC.DocumentFormatError PDP.to_json(sys, path)
+        @test_throws PDP.IC.DocumentFormatError PDP.to_json(sys, path)
         PDP.to_json(sys, path; force = true)
         @test isfile(path)
     end
@@ -50,7 +50,7 @@ end
 
 @testset "document top-level shape" begin
     doc = _round_trip(_rts_system())
-    @test doc["base_power"] == 100.0
+    @test doc["components"]["Area"][1]["base_power"] == 100.0
     @test doc["time_series_storage_file"] == "rts_time_series_storage.h5"
     @test length(doc["components"]["ACBus"]) == 73
     # One row per staged series. The sidecar holds the values; these rows let a consumer see
@@ -110,9 +110,10 @@ end
     )
     cost = gen["operation_cost"]
     @test cost["cost_type"] == "THERMAL"
-    @test cost["variable"]["variable_cost_type"] == "FUEL"
-    @test cost["variable"]["value_curve"]["curve_type"] == "INCREMENTAL"
-    @test cost["variable"]["value_curve"]["function_data"]["x_coords"] isa Vector
+    @test cost["variable_operation_cost"]["variable_cost_type"] == "FUEL"
+    @test cost["variable_operation_cost"]["value_curve"]["curve_type"] == "INCREMENTAL"
+    @test cost["variable_operation_cost"]["value_curve"]["function_data"]["x_coords"] isa
+          Vector
 end
 
 @testset "unset optional properties are omitted, not null" begin

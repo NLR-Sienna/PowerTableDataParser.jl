@@ -67,7 +67,7 @@
             @test isfile(store_path * ".sqlite")
             store = InfraStore.open_store(store_path; read_only = true)
             try
-                metadata = InfraStore.list_time_series(store)
+                metadata = InfraStore.list_metadata(store)
                 @test length(metadata) == length(sys.time_series)
                 @test Set(m.resolution for m in metadata) == Set(
                     Dates.Millisecond.([Dates.Hour(1), Dates.Minute(5)]),

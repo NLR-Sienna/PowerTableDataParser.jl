@@ -25,13 +25,15 @@ const IS = InfrastructureSystems
 import InfrastructureSystems:
     DataFormatError
 
+import InfrastructureCoreOpenAPIModels
 import PowerCoreOpenAPIModels
 import PowerOperationsOpenAPIModels
-import PowerTimeSeriesOpenAPIModels
+import InfrastructureTimeSeriesOpenAPIModels
 import PowerOpenAPIModels
+const IC = InfrastructureCoreOpenAPIModels
 const PC = PowerCoreOpenAPIModels
 const PO = PowerOperationsOpenAPIModels
-const PTS = PowerTimeSeriesOpenAPIModels
+const PTS = InfrastructureTimeSeriesOpenAPIModels
 const PD = PowerOpenAPIModels
 
 #################################################################################

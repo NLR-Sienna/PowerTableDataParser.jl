@@ -34,7 +34,7 @@ end
 
 """
 Conversions PC's vocabulary states, keyed by the casefolded (From, To) the descriptors
-spell and valued with the quantity plus each unit's spelling in `PC.UNIT_VOCABULARY` —
+spell and valued with the quantity plus each unit's spelling in `IC.UNIT_VOCABULARY` —
 which abbreviates the angles the descriptors write out in full.
 """
 const _PC_CONVERSIONS = Dict(
@@ -70,8 +70,8 @@ function convert_units!(
     )
     if haskey(_PC_CONVERSIONS, key)
         quantity, from, to = _PC_CONVERSIONS[key]
-        return value * PC.conversion_factor(quantity, from) /
-               PC.conversion_factor(quantity, to)
+        return value * IC.conversion_factor(quantity, from) /
+               IC.conversion_factor(quantity, to)
     end
     if haskey(_TIME_CONVERSIONS, key)
         return value * _TIME_CONVERSIONS[key]

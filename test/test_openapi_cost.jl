@@ -7,14 +7,15 @@
     )
     cost = PDP.make_thermal_cost(data, gen)
     @test cost.cost_type == "THERMAL"
-    @test cost.variable.variable_cost_type == "FUEL"
-    @test cost.variable.fuel_cost > 0
+    @test cost.variable_operation_cost.variable_cost_type == "FUEL"
+    @test cost.variable_operation_cost.fuel_cost > 0
     # $/MMBtu in the table, $/MBtu in the model.
-    @test cost.variable.fuel_cost ≈ gen.fuel_price / 1000.0
-    @test cost.variable.power_units == "NATURAL_UNITS"
+    @test cost.variable_operation_cost.fuel_cost ≈ gen.fuel_price / 1000.0
+    @test cost.variable_operation_cost.power_units == "NATURAL_UNITS"
     # Heat rates give an incremental curve over the output points.
-    @test cost.variable.value_curve.curve_type == "INCREMENTAL"
-    @test cost.variable.value_curve.function_data.function_type == "PIECEWISE_STEP"
+    @test cost.variable_operation_cost.value_curve.curve_type == "INCREMENTAL"
+    @test cost.variable_operation_cost.value_curve.function_data.function_type ==
+          "PIECEWISE_STEP"
     @test cost.start_up > 0
     @test PDP.OpenAPI.check_required(cost)
 end
@@ -104,8 +105,8 @@ end
     )
     cost = PDP.make_renewable_cost(data, gen)
     @test cost.cost_type == "RENEWABLE"
-    @test cost.variable.variable_cost_type == "COST"
-    @test iszero(cost.variable.value_curve.function_data.proportional_term)
+    @test cost.variable_operation_cost.variable_cost_type == "COST"
+    @test iszero(cost.variable_operation_cost.value_curve.function_data.proportional_term)
 end
 
 @testset "hydro heat-rate costs are a FuelCurve" begin
@@ -117,6 +118,6 @@ end
     )
     cost = PDP.make_hydro_cost(data, gen)
     @test cost.cost_type == "HYDRO_GEN"
-    @test cost.variable.variable_cost_type == "FUEL"
+    @test cost.variable_operation_cost.variable_cost_type == "FUEL"
     @test iszero(cost.fixed)
 end

@@ -204,7 +204,7 @@ end
 
         store = InfraStore.open_store(path; read_only = true)
         try
-            metadata = InfraStore.list_time_series(store)
+            metadata = InfraStore.list_metadata(store)
             # One catalog row per staged association.
             @test length(metadata) == length(sys.time_series)
 
@@ -218,16 +218,17 @@ end
             # not the units label: a per-unit basis is not a unit.
             @test all(m.unit_system == InfraStore.ComponentBase for m in metadata)
 
-            # A full value round trip for one association.
+            # A full value round trip for one association: resolve the catalog id from
+            # the metadata already listed above, then read by id.
             row = first(r for r in sys.time_series if r.owner_type == "OnlineReserve")
-            stored = InfraStore.get_time_series(
-                InfraStore.SingleTimeSeries,
-                store,
-                row.owner_id,
-                InfraStore.Component,
-                IS.get_name(row.series);
-                resolution = IS.get_resolution(row.series),
+            match = only(
+                m for m in metadata if
+                m.owner_type == row.owner_type &&
+                m.owner_id == row.owner_id &&
+                m.name == IS.get_name(row.series) &&
+                m.resolution == IS.get_resolution(row.series)
             )
+            stored = InfraStore.read_by_id(store, match.id)
             @test stored.data == IS.get_array(row.series)
             @test stored.initial_timestamp == IS.get_initial_timestamp(row.series)
         finally

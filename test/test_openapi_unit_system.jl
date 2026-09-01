@@ -1,6 +1,6 @@
-function _system(unit_system)
+function _system(power_units)
     data = PDP.PowerSystemTableData(RTS_GMLC_DIR, 100.0, DESCRIPTORS)
-    return PDP.build_openapi_system(data; unit_system = unit_system)
+    return PDP.build_openapi_system(data; power_units = power_units)
 end
 
 function _named(sys, type_name, name)
@@ -10,12 +10,12 @@ function _named(sys, type_name, name)
 end
 
 @testset "the container states its convention and rejects an unknown one" begin
-    @test PDP.get_unit_system(PDP.OpenAPISystem(100.0)) == "NATURAL_UNITS"
+    @test PDP.get_power_units(PDP.OpenAPISystem(100.0)) == "NATURAL_UNITS"
     @test !PDP.uses_per_unit(PDP.OpenAPISystem(100.0))
-    @test PDP.uses_per_unit(PDP.OpenAPISystem(100.0; unit_system = "COMPONENT_BASE"))
+    @test PDP.uses_per_unit(PDP.OpenAPISystem(100.0; power_units = "COMPONENT_BASE"))
     # SYSTEM_BASE is a UnitSystem value the parsers cannot produce.
-    @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; unit_system = "SYSTEM_BASE")
-    @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; unit_system = "PU")
+    @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; power_units = "SYSTEM_BASE")
+    @test_throws IS.DataFormatError PDP.OpenAPISystem(100.0; power_units = "PU")
 end
 
 @testset "generator power quantities move onto the device base" begin
@@ -92,16 +92,18 @@ end
 end
 
 @testset "the document states the convention it was written in" begin
-    for unit_system in ("NATURAL_UNITS", "COMPONENT_BASE")
-        sys = _system(unit_system)
+    for power_units in ("NATURAL_UNITS", "COMPONENT_BASE")
+        sys = _system(power_units)
         mktempdir() do dir
             path = joinpath(dir, "rts.json")
             PDP.to_json(sys, path)
             doc = JSON.parse(read(path, String))
-            @test doc["unit_system"] == unit_system
+            @test doc["components"]["Area"][1]["power_units"] == power_units
+            # ACBus declares no power_units field, so it carries none either way.
+            @test !haskey(doc["components"]["ACBus"][1], "power_units")
             @test length(doc["components"]["ACBus"]) == 73
-            # The rows ride in both conventions; the document's own unit_system governs
-            # component values, while each row states the basis of its series.
+            # The rows ride in both conventions; each component states its own basis,
+            # while each row states the basis of its series.
             @test length(doc["time_series_associations"]) == 362
         end
     end

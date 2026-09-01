@@ -109,7 +109,7 @@ end
 """A `LinearFunctionData` wrapped as an input-output value curve."""
 function linear_curve(proportional_term::Float64, constant_term::Float64 = 0.0)
     return PC.InputOutputCurve(;
-        function_data = PC.LinearFunctionData(;
+        function_data = IC.LinearFunctionData(;
             proportional_term = proportional_term,
             constant_term = constant_term,
         ),
@@ -118,7 +118,7 @@ end
 
 function quadratic_curve(quadratic_term, proportional_term, constant_term)
     return PC.InputOutputCurve(;
-        function_data = PC.QuadraticFunctionData(;
+        function_data = IC.QuadraticFunctionData(;
             quadratic_term = quadratic_term,
             proportional_term = proportional_term,
             constant_term = constant_term,
@@ -128,8 +128,8 @@ end
 
 """The piecewise input-output data for a set of cost points."""
 function create_pwl_cost(cost_pairs)
-    points = [PC.XYCoords(; x = first(p), y = last(p)) for p in cost_pairs]
-    return PC.PiecewiseLinearData(; points = points)
+    points = [IC.XYCoords(; x = first(p), y = last(p)) for p in cost_pairs]
+    return IC.PiecewiseLinearData(; points = points)
 end
 
 """
@@ -139,7 +139,7 @@ The first y is the average rate at the first point and becomes the curve's
 initial input, so only the remaining y values are slopes.
 """
 function create_pwinc_cost(cost_pairs)
-    return PC.PiecewiseStepData(;
+    return IC.PiecewiseStepData(;
         x_coords = [first(p) for p in cost_pairs],
         y_coords = [last(p) for p in cost_pairs[2:end]],
     )
@@ -282,7 +282,7 @@ function make_thermal_cost(
     end
     start_up, shut_down = calculate_uc_cost(gen, price)
     return PC.ThermalGenerationCost(;
-        variable = PC.FuelCurve(;
+        variable_operation_cost = PC.FuelCurve(;
             value_curve = value_curve,
             power_units = "NATURAL_UNITS",
             fuel_cost = price,
@@ -304,7 +304,7 @@ function make_thermal_cost(
     price = fuel_price(gen)
     start_up, shut_down = calculate_uc_cost(gen, price)
     return PC.ThermalGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -334,7 +334,7 @@ function make_hydro_cost(
 )
     price = fuel_price(gen)
     return PC.HydroGenerationCost(;
-        variable = PC.FuelCurve(;
+        variable_operation_cost = PC.FuelCurve(;
             value_curve = _pwinc_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -354,7 +354,7 @@ function make_hydro_cost(
     per_unit::Bool = false,
 )
     return PC.HydroGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -389,7 +389,7 @@ function make_renewable_cost(
     @warn "Heat rate parsing is not valid for a renewable unit; using a zero cost curve" maxlog =
         5
     return PC.RenewableGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = linear_curve(0.0),
             power_units = "NATURAL_UNITS",
             vom_cost = _vom_curve(gen),
@@ -404,7 +404,7 @@ function make_renewable_cost(
     per_unit::Bool = false,
 )
     return PC.RenewableGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),

@@ -31,24 +31,44 @@ function _compound_type(o::OpenAPI.APIModel, prop::Symbol)
     return only(concrete)
 end
 
+"""
+A power-bearing component's own `power_units` governs the declared unit of every
+power-family field on it (schema instance dispatch), so it must hold a real value before
+any such field is assigned — but a freshly constructed component has it unset, and every
+reader in this package always writes `"MW"`/`"MVAr"`-labeled values regardless of the
+run's actual convention, relying on `per_unit`-aware callers (`iterate_rows`,
+`get_cost_pairs`, ...) to have already computed the right number (`add_component!`
+restamps `power_units` to the run's actual convention once the component is complete).
+Default it to `"NATURAL_UNITS"` here, the first time it is needed, rather than requiring
+every construction site to stamp it.
+"""
+function _default_power_units!(o::OpenAPI.APIModel)
+    T = typeof(o)
+    if hasfield(T, :power_units) && getproperty(o, :power_units) === nothing
+        setproperty!(o, :power_units, "NATURAL_UNITS")
+    end
+    return
+end
+
 function _declared(o::OpenAPI.APIModel, prop::Symbol)
     T = typeof(o)
-    if !PC.has_declared_unit(T, Val(prop))
+    if !IC.has_declared_unit(T, Val(prop))
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop declares no unit; use the 3-argument set_value!",
             ),
         )
     end
+    _default_power_units!(o)
     # Instance dispatch: for discriminated properties both the unit and the
     # quantity depend on a sibling field.
-    return PC.declared_unit(o, Val(prop)), PC.declared_quantity(o, Val(prop))
+    return IC.declared_unit(o, Val(prop)), IC.declared_quantity(o, Val(prop))
 end
 
 function _reject_declared(o::OpenAPI.APIModel, prop::Symbol)
     T = typeof(o)
-    if PC.has_declared_unit(T, Val(prop))
-        unit = PC.declared_unit(o, Val(prop))
+    if IC.has_declared_unit(T, Val(prop))
+        unit = IC.declared_unit(o, Val(prop))
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop declares unit \"$unit\"; use the 4-argument set_value!",
@@ -70,7 +90,7 @@ function _convert(
         return value
     end
     T = typeof(o)
-    if !PC.has_conversion_factor(quantity, source_unit)
+    if !IC.has_conversion_factor(quantity, source_unit)
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop is $quantity in \"$target\"; " *
@@ -78,7 +98,7 @@ function _convert(
             ),
         )
     end
-    if !PC.has_conversion_factor(quantity, target)
+    if !IC.has_conversion_factor(quantity, target)
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop: the unit vocabulary records no conversion factor " *
@@ -86,8 +106,8 @@ function _convert(
             ),
         )
     end
-    return value * PC.conversion_factor(quantity, source_unit) /
-           PC.conversion_factor(quantity, target)
+    return value * IC.conversion_factor(quantity, source_unit) /
+           IC.conversion_factor(quantity, target)
 end
 
 """Convert `value` from `source_unit` into the unit `prop` declares."""
@@ -174,14 +194,14 @@ function get_value(o::OpenAPI.APIModel, prop::Symbol, unit::AbstractString)
         return value
     end
     T = typeof(o)
-    if !PC.has_conversion_factor(quantity, unit) ||
-       !PC.has_conversion_factor(quantity, source)
+    if !IC.has_conversion_factor(quantity, unit) ||
+       !IC.has_conversion_factor(quantity, source)
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop is $quantity in \"$source\"; cannot express in \"$unit\"",
             ),
         )
     end
-    return value * PC.conversion_factor(quantity, source) /
-           PC.conversion_factor(quantity, unit)
+    return value * IC.conversion_factor(quantity, source) /
+           IC.conversion_factor(quantity, unit)
 end
