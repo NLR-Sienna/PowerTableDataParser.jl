@@ -13,8 +13,11 @@ end
 """
 The document PTDP emits, as a thin wrapper over `PD.SystemDocument`.
 
-`document` carries the components, the supplemental-attribute association table,
-`ext` and the unit convention.
+`document` carries the components, the supplemental-attribute association table, and
+`ext`. `base_power` is the system MVA base readers scale against; it is not part of the
+serialized document — each component states its own `base_power`. `power_units` is this
+run's chosen basis, stamped onto every emitted component whose PO type declares the field
+(see [`add_component!`](@ref)); it too is not carried on the document itself.
 
 `registry` is build-time scaffolding and is not serialized: it keeps the lookup
 indices (by name, by bus number, by arc) the document has no use for once built.
@@ -27,10 +30,12 @@ struct OpenAPISystem
     document::PD.SystemDocument
     registry::IdRegistry
     time_series::Vector{StagedTimeSeries}
+    base_power::Float64
+    power_units::String
 end
 
 """
-Unit conventions a document may be written in, from the schemas' `UnitSystem`.
+Unit conventions a component's `power_units` field may take, from the schemas' enum.
 
 The schemas offer no system-base option: per-unit data historically on the system
 base records that base in the component's own `base_power` and rides as
@@ -40,17 +45,23 @@ const UNIT_SYSTEMS = ("NATURAL_UNITS", "COMPONENT_BASE")
 
 function OpenAPISystem(
     base_power::Float64;
-    unit_system::AbstractString = "NATURAL_UNITS",
+    power_units::AbstractString = "NATURAL_UNITS",
 )
-    if !(unit_system in UNIT_SYSTEMS)
+    if !(power_units in UNIT_SYSTEMS)
         throw(
             IS.DataFormatError(
-                "unit_system must be one of $(join(UNIT_SYSTEMS, ", ")); got $unit_system",
+                "power_units must be one of $(join(UNIT_SYSTEMS, ", ")); got $power_units",
             ),
         )
     end
-    document = PD.SystemDocument(base_power; unit_system = unit_system)
-    return OpenAPISystem(document, IdRegistry(document), Vector{StagedTimeSeries}())
+    document = PD.SystemDocument()
+    return OpenAPISystem(
+        document,
+        IdRegistry(document),
+        Vector{StagedTimeSeries}(),
+        base_power,
+        String(power_units),
+    )
 end
 
 get_document(sys::OpenAPISystem) = sys.document
@@ -67,10 +78,10 @@ end
 
 get_ext(sys::OpenAPISystem, component_id::Int) = PD.get_ext(get_document(sys), component_id)
 
-get_base_power(sys::OpenAPISystem) = PD.get_base_power(get_document(sys))
+get_base_power(sys::OpenAPISystem) = sys.base_power
 get_registry(sys::OpenAPISystem) = sys.registry
 
-get_unit_system(sys::OpenAPISystem) = PD.get_unit_system(get_document(sys))
+get_power_units(sys::OpenAPISystem) = sys.power_units
 
 """
 Whether values are stored per unit rather than in the schemas' natural units.
@@ -79,12 +90,21 @@ Whether values are stored per unit rather than in the schemas' natural units.
 per-unit targets, which is device base for injectors and system base where the
 descriptors say so. The `x-unit` annotations still name the natural unit, so a
 per-unit document is for comparison against PowerSystems rather than for a
-consumer that reads the annotations — which is why the document states the
+consumer that reads the annotations — which is why each component states the
 convention it was written in.
 """
-uses_per_unit(sys::OpenAPISystem) = PD.uses_per_unit(get_document(sys))
+uses_per_unit(sys::OpenAPISystem) = sys.power_units == "COMPONENT_BASE"
 
+"""
+Add `component` to the document, first stamping this run's `power_units` onto it when
+its PO type declares the field — the per-component wire-contract requirement every
+power-bearing type carries (a component with none, e.g. a pure topology row, is
+untouched).
+"""
 function add_component!(sys::OpenAPISystem, component::T) where {T <: OpenAPI.APIModel}
+    if hasfield(T, :power_units)
+        setproperty!(component, :power_units, sys.power_units)
+    end
     PD.add_component!(get_document(sys), component)
     return
 end

@@ -1,5 +1,5 @@
 @testset "IdRegistry assigns one global id space" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     @test PDP.register!(reg, "Area", "1") == 1
     @test PDP.register_bus!(reg, 101, "Abel") == 2
     @test PDP.register!(reg, "ThermalStandard", "101_STEAM_3") == 3
@@ -7,7 +7,7 @@
 end
 
 @testset "IdRegistry lookups" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     PDP.register_bus!(reg, 101, "Abel")
     @test PDP.has_bus_id(reg, 101)
     @test PDP.get_bus_id(reg, 101) == 1
@@ -20,24 +20,24 @@ end
 end
 
 @testset "IdRegistry rejects duplicates within a type" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     PDP.register!(reg, "Area", "1")
     @test_throws IS.DataFormatError PDP.register!(reg, "Area", "1")
 end
 
 @testset "IdRegistry rejects duplicate bus numbers" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     PDP.register_bus!(reg, 101, "Abel")
     @test_throws IS.DataFormatError PDP.register_bus!(reg, 101, "Adams")
 end
 
 @testset "IdRegistry allows the same name across types" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     @test PDP.register!(reg, "Area", "1") != PDP.register!(reg, "LoadZone", "1")
 end
 
 @testset "arc_id! deduplicates and respects direction" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     from = PDP.register_bus!(reg, 101, "Abel")
     to = PDP.register_bus!(reg, 102, "Adams")
     id1, created1 = PDP.arc_id!(reg, from, to)
@@ -51,7 +51,7 @@ end
 end
 
 @testset "find_by_name narrows by candidate types" begin
-    reg = PDP.IdRegistry(PDP.PD.SystemDocument(100.0))
+    reg = PDP.IdRegistry(PDP.PD.SystemDocument())
     area = PDP.register!(reg, "Area", "1")
     zone = PDP.register!(reg, "LoadZone", "1")
     @test PDP.find_by_name(reg, ["LoadZone"], "1") == ("LoadZone", zone)

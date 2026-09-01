@@ -16,27 +16,22 @@ PowerOpenAPIModels = "0730f07c-cff6-4c3b-a9df-c546153be50a"
 PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 PowerTimeSeriesOpenAPIModels = "8c2f6a0d-6b0e-4d0a-9d8f-2b5e6a4f9c31"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [weakdeps]
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
-TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
-
-[extensions]
-# Time series pointer-file ingestion into a live PSY System (the code formerly in
-# PowerSystemCaseBuilder). TimeSeries is a trigger only for its TimeArray type; it
-# always loads with PowerSystems, which depends on it.
-PowerTableDataParserPowerSystemsExt = ["PowerSystems", "TimeSeries"]
 
 [sources]
-# Sibling-checkout paths, not a git rev: the x-unit accessors these packages
-# expose are generated and not yet released. Switch to a tagged rev before merge.
-PowerCoreOpenAPIModels = {path = "../PowerOpenAPIModels/PowerCoreOpenAPIModels.jl"}
-PowerOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOpenAPIModels.jl"}
-PowerOperationsOpenAPIModels = {path = "../PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}
-PowerTimeSeriesOpenAPIModels = {path = "../PowerOpenAPIModels/PowerTimeSeriesOpenAPIModels.jl"}
 InfrastructureSystems = {rev = "IS4", url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl"}
+PowerCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "jd/schemas-0.1.0", subdir = "PowerCoreOpenAPIModels.jl"}
+PowerOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "jd/schemas-0.1.0", subdir = "PowerOpenAPIModels.jl"}
+PowerOperationsOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "jd/schemas-0.1.0", subdir = "PowerOperationsOpenAPIModels.jl"}
+PowerTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "jd/schemas-0.1.0", subdir = "PowerTimeSeriesOpenAPIModels.jl"}
+
+[extensions]
+PowerTableDataParserPowerSystemsExt = ["PowerSystems", "TimeSeries"]
 
 [compat]
 CSV = "~0.10"
@@ -49,8 +44,8 @@ OpenAPI = "0.2"
 PowerCoreOpenAPIModels = "0.1"
 PowerOpenAPIModels = "0.1"
 PowerOperationsOpenAPIModels = "0.1"
-PowerTimeSeriesOpenAPIModels = "0.1"
 PowerSystems = "^5.10"
+PowerTimeSeriesOpenAPIModels = "0.1"
 SQLite = "^1.6"
 TimeSeries = "0.25"
 Unicode = "1"

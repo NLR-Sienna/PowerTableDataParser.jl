@@ -5,10 +5,10 @@
 """
 Assemble an `OpenAPISystem` from parsed table data.
 
-`unit_system` selects the convention the values are stored in: `NATURAL_UNITS`,
+`power_units` selects the convention the values are stored in: `NATURAL_UNITS`,
 which is what the schema annotations describe, or `COMPONENT_BASE`, which applies
 the descriptors' per-unit targets and so reproduces what PowerSystems stores.
-The choice is recorded in the emitted document.
+The choice is stamped onto every emitted component that declares the field.
 
 Time series are read when the data names a pointer file. The values are held in
 memory; `write_time_series` puts them in an InfraStore sidecar pair whose
@@ -16,9 +16,9 @@ catalog carries the owner associations.
 """
 function build_openapi_system(
     data::PowerSystemTableData;
-    unit_system::AbstractString = "NATURAL_UNITS",
+    power_units::AbstractString = "NATURAL_UNITS",
 )
-    sys = OpenAPISystem(data.base_power; unit_system = unit_system)
+    sys = OpenAPISystem(data.base_power; power_units = power_units)
 
     loadzone_csv_parser!(sys, data)
     bus_csv_parser!(sys, data)

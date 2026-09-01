@@ -31,6 +31,25 @@ function _compound_type(o::OpenAPI.APIModel, prop::Symbol)
     return only(concrete)
 end
 
+"""
+A power-bearing component's own `power_units` governs the declared unit of every
+power-family field on it (schema instance dispatch), so it must hold a real value before
+any such field is assigned — but a freshly constructed component has it unset, and every
+reader in this package always writes `"MW"`/`"MVAr"`-labeled values regardless of the
+run's actual convention, relying on `per_unit`-aware callers (`iterate_rows`,
+`get_cost_pairs`, ...) to have already computed the right number (`add_component!`
+restamps `power_units` to the run's actual convention once the component is complete).
+Default it to `"NATURAL_UNITS"` here, the first time it is needed, rather than requiring
+every construction site to stamp it.
+"""
+function _default_power_units!(o::OpenAPI.APIModel)
+    T = typeof(o)
+    if hasfield(T, :power_units) && getproperty(o, :power_units) === nothing
+        setproperty!(o, :power_units, "NATURAL_UNITS")
+    end
+    return
+end
+
 function _declared(o::OpenAPI.APIModel, prop::Symbol)
     T = typeof(o)
     if !PC.has_declared_unit(T, Val(prop))
@@ -40,6 +59,7 @@ function _declared(o::OpenAPI.APIModel, prop::Symbol)
             ),
         )
     end
+    _default_power_units!(o)
     # Instance dispatch: for discriminated properties both the unit and the
     # quantity depend on a sibling field.
     return PC.declared_unit(o, Val(prop)), PC.declared_quantity(o, Val(prop))

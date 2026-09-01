@@ -282,7 +282,7 @@ function make_thermal_cost(
     end
     start_up, shut_down = calculate_uc_cost(gen, price)
     return PC.ThermalGenerationCost(;
-        variable = PC.FuelCurve(;
+        variable_operation_cost = PC.FuelCurve(;
             value_curve = value_curve,
             power_units = "NATURAL_UNITS",
             fuel_cost = price,
@@ -304,7 +304,7 @@ function make_thermal_cost(
     price = fuel_price(gen)
     start_up, shut_down = calculate_uc_cost(gen, price)
     return PC.ThermalGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -334,7 +334,7 @@ function make_hydro_cost(
 )
     price = fuel_price(gen)
     return PC.HydroGenerationCost(;
-        variable = PC.FuelCurve(;
+        variable_operation_cost = PC.FuelCurve(;
             value_curve = _pwinc_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -354,7 +354,7 @@ function make_hydro_cost(
     per_unit::Bool = false,
 )
     return PC.HydroGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),
@@ -389,7 +389,7 @@ function make_renewable_cost(
     @warn "Heat rate parsing is not valid for a renewable unit; using a zero cost curve" maxlog =
         5
     return PC.RenewableGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = linear_curve(0.0),
             power_units = "NATURAL_UNITS",
             vom_cost = _vom_curve(gen),
@@ -404,7 +404,7 @@ function make_renewable_cost(
     per_unit::Bool = false,
 )
     return PC.RenewableGenerationCost(;
-        variable = PC.CostCurve(;
+        variable_operation_cost = PC.CostCurve(;
             value_curve = _pwl_value_curve(
                 gen,
                 get_cost_pairs(gen, cols; per_unit = per_unit),

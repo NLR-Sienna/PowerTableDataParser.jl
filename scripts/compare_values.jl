@@ -1,7 +1,7 @@
 # Compare the numbers, not just the shape: every field the OpenAPI document and
 # the psy5 system both carry, for every component they share.
 #
-# This reads the DEVICE_BASE document, so both sides are in PowerSystems' storage
+# This reads the COMPONENT_BASE document, so both sides are in PowerSystems' storage
 # convention and the comparison is direct. Run it after:
 #   julia --project=scripts/psy5_reference scripts/build_psy5_reference.jl
 #   julia --project=test data/emit_rts.jl
@@ -139,11 +139,16 @@ function main()
     reference = JSON.parsefile(REFERENCE)["data"]["components"]
     doc = JSON.parsefile(DOCUMENT)
 
-    if doc["unit_system"] != "DEVICE_BASE"
+    component_power_units = Set(
+        String(item["power_units"])
+        for (_type, items) in doc["components"] for
+        item in items if haskey(item, "power_units")
+    )
+    if component_power_units != Set(["COMPONENT_BASE"])
         println(
-            "This compares against PowerSystems' storage convention, so the document " *
-            "must be DEVICE_BASE; got $(doc["unit_system"]). Build it with " *
-            "build_openapi_system(data; unit_system = \"DEVICE_BASE\").",
+            "This compares against PowerSystems' storage convention, so every " *
+            "power-bearing component must be COMPONENT_BASE; got $component_power_units. " *
+            "Build it with build_openapi_system(data; power_units = \"COMPONENT_BASE\").",
         )
         return 1
     end
