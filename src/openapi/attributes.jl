@@ -36,7 +36,7 @@ incremental curve is a constant function: the marginal rate is the rate.
 function emission_rate_curve(rate::Float64)
     return PC.IncrementalCurve(;
         initial_input = 0.0,
-        function_data = PC.LinearFunctionData(;
+        function_data = IC.LinearFunctionData(;
             proportional_term = 0.0,
             constant_term = rate,
         ),
@@ -173,7 +173,7 @@ function geographic_info_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableD
         if isnothing(latitude) || isnothing(longitude)
             continue
         end
-        attribute = PC.GeographicInfo()
+        attribute = IC.GeographicInfo()
         set_value!(attribute, :id, next_id!(reg))
         set_value!(
             attribute,

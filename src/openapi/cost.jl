@@ -109,7 +109,7 @@ end
 """A `LinearFunctionData` wrapped as an input-output value curve."""
 function linear_curve(proportional_term::Float64, constant_term::Float64 = 0.0)
     return PC.InputOutputCurve(;
-        function_data = PC.LinearFunctionData(;
+        function_data = IC.LinearFunctionData(;
             proportional_term = proportional_term,
             constant_term = constant_term,
         ),
@@ -118,7 +118,7 @@ end
 
 function quadratic_curve(quadratic_term, proportional_term, constant_term)
     return PC.InputOutputCurve(;
-        function_data = PC.QuadraticFunctionData(;
+        function_data = IC.QuadraticFunctionData(;
             quadratic_term = quadratic_term,
             proportional_term = proportional_term,
             constant_term = constant_term,
@@ -128,8 +128,8 @@ end
 
 """The piecewise input-output data for a set of cost points."""
 function create_pwl_cost(cost_pairs)
-    points = [PC.XYCoords(; x = first(p), y = last(p)) for p in cost_pairs]
-    return PC.PiecewiseLinearData(; points = points)
+    points = [IC.XYCoords(; x = first(p), y = last(p)) for p in cost_pairs]
+    return IC.PiecewiseLinearData(; points = points)
 end
 
 """
@@ -139,7 +139,7 @@ The first y is the average rate at the first point and becomes the curve's
 initial input, so only the remaining y values are slopes.
 """
 function create_pwinc_cost(cost_pairs)
-    return PC.PiecewiseStepData(;
+    return IC.PiecewiseStepData(;
         x_coords = [first(p) for p in cost_pairs],
         y_coords = [last(p) for p in cost_pairs[2:end]],
     )

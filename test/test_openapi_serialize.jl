@@ -33,7 +33,7 @@ end
         path = joinpath(dir, "x.json")
         PDP.to_json(sys, path)
         # PD.write_document owns the "already exists" check for the JSON path now.
-        @test_throws PDP.PC.DocumentFormatError PDP.to_json(sys, path)
+        @test_throws PDP.IC.DocumentFormatError PDP.to_json(sys, path)
         PDP.to_json(sys, path; force = true)
         @test isfile(path)
     end

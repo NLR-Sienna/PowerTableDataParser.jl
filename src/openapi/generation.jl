@@ -447,7 +447,7 @@ function _add_reservoir!(
     set_value!(
         reservoir,
         :head_to_volume_factor,
-        PC.LinearFunctionData(; proportional_term = 1.0, constant_term = 0.0),
+        IC.LinearFunctionData(; proportional_term = 1.0, constant_term = 0.0),
     )
     set_value!(reservoir, :operation_cost, PC.HydroReservoirCost())
     set_value!(reservoir, link, [turbine_id])
@@ -535,7 +535,7 @@ function make_storage(
     set_value!(
         component,
         :storage_level_limits,
-        PC.MinMax(; min = row.min_storage_capacity / row.storage_capacity, max = 1.0),
+        IC.MinMax(; min = row.min_storage_capacity / row.storage_capacity, max = 1.0),
     )
     set_value!(
         component,
@@ -560,7 +560,7 @@ function make_storage(
     set_value!(
         component,
         :efficiency,
-        PC.InOut(; in = row.input_efficiency, out = row.output_efficiency),
+        IC.InOut(; in = row.input_efficiency, out = row.output_efficiency),
     )
     set_value!(component, :reactive_power, reactive_power, "MVAr")
     _set_optional!(component, :reactive_power_limits, reactive_power_limits, "MVAr")
