@@ -439,7 +439,7 @@ association rows before persisting — the sidecar is authoritative for both ass
 tables, so whatever `add_supplemental_attribute!` has recorded on the document travels
 with it.
 
-The whole batch commits as one transaction, and the store dedups arrays by content hash —
+The whole run commits as one transaction, and the store dedups arrays by content hash —
 a fanned-out series lands once no matter how many owners reference it.
 
 Returns the store's own `TimeSeriesAssociation` rows, already sorted by identity and
@@ -450,18 +450,20 @@ function write_time_series(sys::OpenAPISystem, path::AbstractString)
     category = IS.get_owner_category(IS.InfrastructureSystemsComponent)
     store = IS.Store(; in_memory = true)
     try
-        batch = IS.make_add_batch()
-        for staged in sys.time_series
-            IS.serialize_single!(
-                batch,
-                staged.owner_id,
-                staged.owner_type,
-                category,
-                IS.get_name(staged.series),
-                staged.series,
-            )
+        # Each add writes straight through; the transaction is what makes the run
+        # atomic and lets the store pack the arrays into blocks instead of spilling
+        # one dataset per add.
+        IS.InfraStore.transaction(store.inner) do
+            for staged in sys.time_series
+                IS.add_time_series!(
+                    store,
+                    staged.owner_id,
+                    staged.owner_type,
+                    category,
+                    staged.series,
+                )
+            end
         end
-        IS.commit_batch!(store, batch)
         _stamp_supplemental_attribute_associations!(store, sys)
         IS.serialize(store, String(path))
         return IS.openapi_time_series_association_rows(store)
