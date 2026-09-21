@@ -1,8 +1,11 @@
 @testset "get_enum_value resolves UnitSystem from descriptor strings" begin
-    @test PDP.get_enum_value(IS.UnitSystem, "natural_units") == IS.UnitSystem.NATURAL_UNITS
-    @test PDP.get_enum_value(IS.UnitSystem, "device_base") == IS.UnitSystem.DEVICE_BASE
-    @test PDP.get_enum_value(IS.UnitSystem, "SYSTEM_BASE") == IS.UnitSystem.SYSTEM_BASE
-    @test_throws ArgumentError PDP.get_enum_value(IS.UnitSystem, "nonsense")
+    @test PDP.get_enum_value(IS.UnitSystem.Value, "natural_units") ==
+          IS.UnitSystem.NATURAL_UNITS
+    @test PDP.get_enum_value(IS.UnitSystem.Value, "device_base") ==
+          IS.UnitSystem.DEVICE_BASE
+    @test PDP.get_enum_value(IS.UnitSystem.Value, "SYSTEM_BASE") ==
+          IS.UnitSystem.SYSTEM_BASE
+    @test_throws ArgumentError PDP.get_enum_value(IS.UnitSystem.Value, "nonsense")
 end
 
 @testset "get_dataframe returns the table for a category" begin

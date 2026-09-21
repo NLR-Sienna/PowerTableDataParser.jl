@@ -97,7 +97,7 @@ Throws DataFormatError if a required value is not found in the file.
 """
 function get_user_field(
     data::PowerSystemTableData,
-    category::InputCategory,
+    category::InputCategory.Value,
     field::AbstractString,
 )
     key = _category_key(category)
@@ -119,7 +119,7 @@ function get_user_field(
 end
 
 """Return a vector of user-defined fields for the category."""
-function get_user_fields(data::PowerSystemTableData, category::InputCategory)
+function get_user_fields(data::PowerSystemTableData, category::InputCategory.Value)
     key = _category_key(category)
     if !haskey(data.user_descriptors, key)
         throw(IS.DataFormatError("Invalid category=$category"))
@@ -129,7 +129,7 @@ function get_user_fields(data::PowerSystemTableData, category::InputCategory)
 end
 
 """Return the dataframe for the category."""
-function get_dataframe(data::PowerSystemTableData, category::InputCategory)
+function get_dataframe(data::PowerSystemTableData, category::InputCategory.Value)
     df = get(data.category_to_df, _category_key(category), DataFrames.DataFrame())
     isempty(df) && @warn("Missing $category data.")
     return df
@@ -215,7 +215,7 @@ struct _FieldInfo
     custom_name::String
     per_unit_conversion::NamedTuple{
         (:From, :To, :Reference),
-        Tuple{IS.UnitSystem, IS.UnitSystem, String},
+        Tuple{IS.UnitSystem.Value, IS.UnitSystem.Value, String},
     }
     unit_conversion::Union{NamedTuple{(:From, :To), Tuple{String, String}}, Nothing}
     default_value::Any
@@ -223,7 +223,7 @@ end
 
 function _get_field_infos(
     data::PowerSystemTableData,
-    category::InputCategory,
+    category::InputCategory.Value,
     df_names;
     per_unit = true,
 )
@@ -237,14 +237,14 @@ function _get_field_infos(
     end
 
     # The user's descriptors state what unit system the raw columns are already in.
-    source_unit_system = Dict{String, IS.UnitSystem}()
+    source_unit_system = Dict{String, IS.UnitSystem.Value}()
     unit = Dict{String, Union{String, Nothing}}()
     custom_names = Dict{String, String}()
     for descriptor in data.user_descriptors[key]
         custom_name = descriptor["custom_name"]
         if descriptor["custom_name"] in df_names
             source_unit_system[descriptor["name"]] = get_enum_value(
-                IS.UnitSystem,
+                IS.UnitSystem.Value,
                 get(descriptor, "unit_system", "NATURAL_UNITS"),
             )
             unit[descriptor["name"]] = get(descriptor, "unit", nothing)
@@ -259,7 +259,7 @@ function _get_field_infos(
     for item in data.descriptors[key]
         name = item["name"]
         item_unit_system =
-            get_enum_value(IS.UnitSystem, get(item, "unit_system", "NATURAL_UNITS"))
+            get_enum_value(IS.UnitSystem.Value, get(item, "unit_system", "NATURAL_UNITS"))
         per_unit_reference = get(item, "base_reference", "base_power")
         default_value = get(item, "default_value", "required")
         if default_value == "system_base_power"
