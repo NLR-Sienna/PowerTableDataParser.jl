@@ -19,7 +19,7 @@ const INPUT_CATEGORY_NAMES = [
 
 # Convert InputCategory enum to Symbol key for dictionary lookup.
 # Using Symbol keys avoids type incompatibility with PowerSystems.jl's InputCategory.
-_category_key(category::InputCategory) = Symbol(string(category))
+_category_key(category::InputCategory.Value) = Symbol(string(category))
 
 struct PowerSystemTableData
     base_power::Float64
