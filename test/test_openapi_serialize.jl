@@ -12,8 +12,8 @@ function _round_trip(sys)
 end
 
 @testset "time_series_filename follows the PSY sibling convention" begin
-    @test PDP.time_series_filename("rts.json") == "rts_time_series_storage.h5"
-    @test PDP.time_series_filename("/a/b/rts.json") == "rts_time_series_storage.h5"
+    @test PDP.time_series_filename("rts.json") == "rts.h5"
+    @test PDP.time_series_filename("/a/b/rts.json") == "rts.h5"
 end
 
 @testset "to_json writes the document and the sidecar pair" begin
@@ -22,8 +22,8 @@ end
         path = joinpath(dir, "rts.json")
         PDP.to_json(sys, path)
         @test isfile(path)
-        @test isfile(joinpath(dir, "rts_time_series_storage.h5"))
-        @test isfile(joinpath(dir, "rts_time_series_storage.h5.sqlite"))
+        @test isfile(joinpath(dir, "rts.h5"))
+        @test isfile(joinpath(dir, "rts.h5.sqlite"))
     end
 end
 
@@ -51,7 +51,7 @@ end
 @testset "document top-level shape" begin
     doc = _round_trip(_rts_system())
     @test doc["components"]["Area"][1]["base_power"] == 100.0
-    @test doc["time_series_storage_file"] == "rts_time_series_storage.h5"
+    @test doc["time_series_storage_file"] == "rts.h5"
     @test length(doc["components"]["ACBus"]) == 73
     # One row per staged series. The sidecar holds the values; these rows let a consumer see
     # what the bundle contains, and on what basis, without opening the store.
@@ -81,7 +81,7 @@ end
         @test !isempty(doc_associations)
 
         store = IS.open_infrastore_store(
-            joinpath(dir, "rts_time_series_storage.h5");
+            joinpath(dir, "rts.h5");
             read_only = true,
         )
         try
@@ -146,6 +146,6 @@ end
         left = JSON.parse(read(plain, String))
         right = JSON.parse(read(pretty, String))
         @test left["components"] == right["components"]
-        @test right["time_series_storage_file"] == "pretty_time_series_storage.h5"
+        @test right["time_series_storage_file"] == "pretty.h5"
     end
 end

@@ -14,6 +14,7 @@ function _pointer_test_system()
         name = "Zone1",
         peak_active_power = 200.0,
         peak_reactive_power = 40.0,
+        input_basis = PSY.CU,
     )
     PSY.add_component!(sys, zone)
     make_bus(number, name, load_zone) = PSY.ACBus(;
@@ -40,6 +41,7 @@ function _pointer_test_system()
         base_power = 100.0,
         max_active_power = 1.0,
         max_reactive_power = 0.2,
+        input_basis = PSY.CU,
     )
     PSY.add_component!(sys, make_load("load1", bus1))
     PSY.add_component!(sys, make_load("load2", bus2))

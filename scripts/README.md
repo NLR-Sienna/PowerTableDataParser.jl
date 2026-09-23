@@ -51,17 +51,18 @@ julia --project=test -e 'using Pkg; Pkg.instantiate()'
 
 ### `export_system_json.jl`
 
-Exports system data to JSON in both SI and natural gas unit systems for manual verification.
+Parses RTS-GMLC into an OpenAPI document, reads it into a `PowerSystems.System`, and writes it back out for manual verification.
 
 **Usage:**
 ```bash
-julia --project=. scripts/export_system_json.jl [output_dir]
+julia --project=test scripts/export_system_json.jl [output_dir]
 ```
 
 **Output:**
-- `system_si_units.json` — System serialized in SI units
-- `system_natural_gas_units.json` — System serialized in natural gas units
-- `export_metadata.json` — Export metadata and system statistics
+- `rts_openapi.json` (+ `rts_openapi.h5` sidecar) — the parser's OpenAPI document
+- `rts_natural_units.json` — the System re-exported by `PSY.to_file` in natural units
+- `rts.sns` — the lossless Sienna archive written by `PSY.to_file`
+- `export_metadata.json` — export metadata and system statistics
 
 **Purpose:** Provides complete system representation for manual inspection, validation, and comparison between unit systems. Useful for verifying schema compliance and data correctness.
 

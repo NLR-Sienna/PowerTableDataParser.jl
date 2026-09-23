@@ -53,7 +53,7 @@
         mktempdir() do dir
             path = joinpath(dir, "rts.json")
             PDP.to_json(sys, path; pretty = true)
-            store_path = joinpath(dir, "rts_time_series_storage.h5")
+            store_path = joinpath(dir, "rts.h5")
             @test isfile(path)
             @test isfile(store_path)
             @test isfile(store_path * ".sqlite")

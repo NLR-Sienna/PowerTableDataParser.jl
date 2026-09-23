@@ -2,11 +2,12 @@
 # does not carry: the InfraStore sidecar's name and its contents.
 
 """
-InfraStore sidecar name for a document, following the PowerSystems convention.
-The store writes this file plus a `.sqlite` sibling holding the catalog.
+InfraStore sidecar name for a document: its stem with `.h5`, as PowerSystems' `to_file` names
+the sidecar of a `.json` document. The store writes this file plus a `.sqlite` sibling holding
+the catalog.
 """
 function time_series_filename(filename::AbstractString)
-    return string(splitext(basename(filename))[1], "_time_series_storage.h5")
+    return string(splitext(basename(filename))[1], ".h5")
 end
 
 """
