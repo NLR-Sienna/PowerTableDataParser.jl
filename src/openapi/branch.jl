@@ -43,8 +43,8 @@ end
 """
 Tap band a transformer keeps when the tables state no control block.
 
-This is the schemas' declared default for `control_limits` (PSS/E RMA/RMI) and
-the same band PowerSystems gives a tap changer. Table data has no COD/RMA/RMI
+This is the schemas' declared default for `tap_ratio_limits` (PSS/E RMA/RMI) under
+the tap-moving objectives and the same band PowerSystems gives a tap changer. Table data has no COD/RMA/RMI
 columns, so the alternative is leaving the range unset and losing it entirely.
 """
 const DEFAULT_TAP_CONTROL_BAND = (min = 0.9, max = 1.1)
@@ -118,12 +118,11 @@ function _add_transformer!(sys::OpenAPISystem, branch, arc::Int, from_kv, to_kv)
     _set_optional!(circuit, :rating_b, branch.rating_b, "MVA")
     _set_optional!(circuit, :rating_c, branch.rating_c, "MVA")
     # The tables state a tap ratio and no control block, which is PSS/E COD 0: a
-    # fixed tap. The band takes the schemas' declared default and the controlled
-    # quantity is the nominal voltage, stated as a band with coincident ends.
-    # control_objective sets the unit of both bands, so it is assigned first.
+    # fixed tap. FIXED pairs the tap-ratio actuator with a voltage target, so those
+    # two bands are written and the phase-angle and power bands stay absent.
     set_value!(circuit, :control_objective, "FIXED")
-    set_value!(circuit, :control_limits, DEFAULT_TAP_CONTROL_BAND, "1")
-    set_value!(circuit, :controlled_quantity_limits, NOMINAL_VOLTAGE_BAND, "pu")
+    set_value!(circuit, :tap_ratio_limits, DEFAULT_TAP_CONTROL_BAND, "1")
+    set_value!(circuit, :controlled_voltage_limits, NOMINAL_VOLTAGE_BAND, "pu")
     set_value!(circuit, :number_of_tap_positions, DEFAULT_NUMBER_OF_TAP_POSITIONS)
     set_value!(circuit, :active_power_flow, branch.active_power_flow, "MW")
     set_value!(circuit, :reactive_power_flow, branch.reactive_power_flow, "MVAr")
