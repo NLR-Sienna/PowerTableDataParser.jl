@@ -18,6 +18,7 @@ function _pointer_test_system()
     )
     PSY.add_component!(sys, zone)
     make_bus(number, name, load_zone) = PSY.ACBus(;
+        input_basis = PSY.CU,
         number = number,
         name = name,
         available = true,
