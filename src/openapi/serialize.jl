@@ -1,4 +1,4 @@
-# `PD.write_document` owns the JSON envelope; this file supplies only what the document
+# `PC.write_document` owns the JSON envelope; this file supplies only what the document
 # does not carry: the InfraStore sidecar's name and its contents.
 
 """
@@ -20,15 +20,15 @@ Fields are copied by name rather than listed positionally: this is a container o
 another package, and spelling out its field order here means every field added there
 silently breaks this call.
 """
-function _document_for_write(doc::PD.SystemDocument, ts_basename::Union{Nothing, String})
-    args = map(fieldnames(PD.SystemDocument)) do field
+function _document_for_write(doc::PC.SystemDocument, ts_basename::Union{Nothing, String})
+    args = map(fieldnames(PC.SystemDocument)) do field
         if field === :time_series_storage_file
             ts_basename
         else
             getfield(doc, field)
         end
     end
-    return PD.SystemDocument(args...)
+    return PC.SystemDocument(args...)
 end
 
 """
@@ -62,7 +62,7 @@ function to_json(
         append!(associations, write_time_series(sys, ts_path))
     end
     document = _document_for_write(get_document(sys), ts_basename)
-    PD.write_document(document, filename; pretty = pretty, force = force)
+    PC.write_document(document, filename; pretty = pretty, force = force)
     if isnothing(ts_basename)
         @info "Serialized OpenAPISystem to $filename"
     else

@@ -11,7 +11,7 @@ struct StagedTimeSeries
 end
 
 """
-The document PTDP emits, as a thin wrapper over `PD.SystemDocument`.
+The document PTDP emits, as a thin wrapper over `PC.SystemDocument`.
 
 `document` carries the components, the supplemental-attribute association table, and
 `ext`. `base_power` is the system MVA base readers scale against; it is not part of the
@@ -27,7 +27,7 @@ indices (by name, by bus number, by arc) the document has no use for once built.
 document only names the store file.
 """
 struct OpenAPISystem
-    document::PD.SystemDocument
+    document::PC.SystemDocument
     registry::IdRegistry
     time_series::Vector{StagedTimeSeries}
     base_power::Float64
@@ -54,7 +54,7 @@ function OpenAPISystem(
             ),
         )
     end
-    document = PD.SystemDocument()
+    document = PC.SystemDocument()
     return OpenAPISystem(
         document,
         IdRegistry(document),
@@ -72,11 +72,11 @@ get_service_associations(sys::OpenAPISystem) = get_document(sys).service_associa
 
 """Record the table columns the data model has no field for, against a component."""
 function set_ext!(sys::OpenAPISystem, component_id::Int, extras::Dict{String, Any})
-    PD.set_ext!(get_document(sys), component_id, extras)
+    PC.set_ext!(get_document(sys), component_id, extras)
     return
 end
 
-get_ext(sys::OpenAPISystem, component_id::Int) = PD.get_ext(get_document(sys), component_id)
+get_ext(sys::OpenAPISystem, component_id::Int) = PC.get_ext(get_document(sys), component_id)
 
 get_base_power(sys::OpenAPISystem) = sys.base_power
 get_registry(sys::OpenAPISystem) = sys.registry
@@ -105,7 +105,7 @@ function add_component!(sys::OpenAPISystem, staged::Staged{T}) where {T}
     if hasfield(T, :power_units)
         set_value!(staged, :power_units, sys.power_units)
     end
-    PD.add_component!(get_document(sys), materialize(staged))
+    PC.add_component!(get_document(sys), materialize(staged))
     return
 end
 
@@ -121,7 +121,7 @@ function add_supplemental_attribute!(
     attribute::Staged,
     entity_id::Int,
 )
-    PD.add_supplemental_attribute!(get_document(sys), materialize(attribute), entity_id)
+    PC.add_supplemental_attribute!(get_document(sys), materialize(attribute), entity_id)
     return
 end
 
@@ -138,12 +138,12 @@ needed here.
 One row per pair, so each membership is individually addressable. Duplicate pairs are
 rejected: the tables express membership as overlapping eligibility rules, so the same
 device can match one reserve twice, and silently collapsing that would hide a malformed
-rule set. The rejection itself is `PD.add_service_association!`'s job — it holds the O(1)
+rule set. The rejection itself is `PC.add_service_association!`'s job — it holds the O(1)
 membership check against `service_membership`, so this wrapper does not rescan
 `service_associations` before delegating.
 """
 function add_service_association!(sys::OpenAPISystem, service_id::Int, entity_id::Int)
-    PD.add_service_association!(
+    PC.add_service_association!(
         get_document(sys),
         PO.ServiceAssociation(; service_id = service_id, entity_id = entity_id),
     )
@@ -152,12 +152,12 @@ end
 
 """Attributes of one type, in the order they were added."""
 function get_supplemental_attributes(sys::OpenAPISystem, type_name::AbstractString)
-    return PD.get_supplemental_attributes(get_document(sys), type_name)
+    return PC.get_supplemental_attributes(get_document(sys), type_name)
 end
 
 function get_components(sys::OpenAPISystem, type_name::AbstractString)
-    return PD.get_components(get_document(sys), type_name)
+    return PC.get_components(get_document(sys), type_name)
 end
 
 """Type names in sorted order, so serialized output is deterministic."""
-component_type_names(sys::OpenAPISystem) = PD.component_type_names(get_document(sys))
+component_type_names(sys::OpenAPISystem) = PC.component_type_names(get_document(sys))

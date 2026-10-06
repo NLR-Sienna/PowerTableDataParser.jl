@@ -30,10 +30,10 @@ Keyed by the psy5 name; the value is what to look for in the document.
 """
 const FIELD_ALIASES = Dict(
     "primary_shunt" => "magnetizing_shunt",
-    "tap_limits" => "control_limits",
+    "tap_limits" => "tap_ratio_limits",
     # PSS/E states a controlled quantity as a band, so psy5's scalar setpoint is
     # the band whose ends coincide. `close_enough` compares them on those terms.
-    "voltage_setpoint" => "controlled_quantity_limits",
+    "voltage_setpoint" => "controlled_voltage_limits",
 )
 
 """
