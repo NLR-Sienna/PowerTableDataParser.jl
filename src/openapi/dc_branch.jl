@@ -22,6 +22,27 @@ function make_dc_limits(dc_branch, min_field::Symbol, max_field::Symbol)
     return (min = min_limit, max = max_limit)
 end
 
+"""
+Transfer rating of a DC branch: the largest active power magnitude either end allows.
+"""
+function _dc_rating(limits_from, limits_to)
+    return maximum(abs, (limits_from.min, limits_from.max, limits_to.min, limits_to.max))
+end
+
+"""
+Directional flow limits of a DC branch. The `from` limits bound the flow leaving the `from`
+bus, where a negative value is flow in the reverse direction, so the positive part of each
+bound limits `from_to` and the negated negative part limits `to_from`.
+"""
+function _dc_flow_limit(limits_from)
+    return (
+        from_to_min = max(limits_from.min, 0.0),
+        from_to_max = max(limits_from.max, 0.0),
+        to_from_min = max(-limits_from.max, 0.0),
+        to_from_max = max(-limits_from.min, 0.0),
+    )
+end
+
 function dc_branch_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
     reg = get_registry(sys)
     for dc_branch in
@@ -49,26 +70,18 @@ function dc_branch_csv_parser!(sys::OpenAPISystem, data::PowerSystemTableData)
         set_value!(line, :available, true)
         set_value!(line, :arc, arc)
         set_value!(line, :active_power_flow, dc_branch.active_power_flow, "MW")
-        set_value!(
-            line,
-            :active_power_limits_from,
-            make_dc_limits(
-                dc_branch,
-                :min_active_power_limit_from,
-                :max_active_power_limit_from,
-            ),
-            "MW",
+        limits_from = make_dc_limits(
+            dc_branch,
+            :min_active_power_limit_from,
+            :max_active_power_limit_from,
         )
-        set_value!(
-            line,
-            :active_power_limits_to,
-            make_dc_limits(
-                dc_branch,
-                :min_active_power_limit_to,
-                :max_active_power_limit_to,
-            ),
-            "MW",
+        limits_to = make_dc_limits(
+            dc_branch,
+            :min_active_power_limit_to,
+            :max_active_power_limit_to,
         )
+        set_value!(line, :rating, _dc_rating(limits_from, limits_to), "MVA")
+        set_value!(line, :operational_flow_limit, _dc_flow_limit(limits_from), "MW")
         set_value!(
             line,
             :reactive_power_limits_from,

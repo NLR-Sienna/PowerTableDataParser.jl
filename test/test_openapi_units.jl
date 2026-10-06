@@ -109,12 +109,12 @@ end
 end
 
 @testset "discriminated units are read off the instance" begin
-    line = PDP.stage(PDP.PO.TwoTerminalLCCLine)
+    line = PDP.stage(PDP.PO.Line)
     PDP.set_value!(line, :parameter_units, "NATURAL_UNITS")
     PDP.set_value!(line, :r, 5.0, "ohm")
     @test PDP.get_value(line, :r) == 5.0
 
-    other = PDP.stage(PDP.PO.TwoTerminalLCCLine)
+    other = PDP.stage(PDP.PO.Line)
     PDP.set_value!(other, :parameter_units, "COMPONENT_BASE")
     @test_throws IS.DataFormatError PDP.set_value!(other, :r, 5.0, "ohm")
     PDP.set_value!(other, :r, 0.01, "pu")

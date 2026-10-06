@@ -26,19 +26,18 @@ end
 @testset "power limits are populated from the descriptor" begin
     sys, _ = _dc()
     line = only(PDP.get_components(sys, "TwoTerminalGenericHVDCLine"))
-    for field in (
-        :active_power_limits_from,
-        :active_power_limits_to,
-        :reactive_power_limits_from,
-        :reactive_power_limits_to,
-    )
+    for field in (:reactive_power_limits_from, :reactive_power_limits_to)
         limits = PDP.get_value(line, field)
         @test limits.max >= limits.min
     end
-    # RTS states only MW Load = 100, so the limits are symmetric around zero.
-    from = PDP.get_value(line, :active_power_limits_from)
-    @test from.max ≈ 100.0
-    @test from.min ≈ -100.0
+    # RTS states only MW Load = 100, so the limits are symmetric around zero: the rating is
+    # 100 MW and each direction may carry up to 100 MW.
+    @test PDP.get_value(line, :rating) ≈ 100.0
+    flow = PDP.get_value(line, :operational_flow_limit)
+    @test iszero(flow.from_to_min)
+    @test flow.from_to_max ≈ 100.0
+    @test iszero(flow.to_from_min)
+    @test flow.to_from_max ≈ 100.0
 end
 
 @testset "the loss margin becomes a proportional curve" begin
