@@ -8,7 +8,7 @@ ways: by bus number (`branch.csv` `From Bus`), by component name (`gen.csv`
 Ids come from a single counter shared by every type: an id alone identifies a component
 without needing its type alongside it, which is why a bus number cannot double as an id.
 
-The counter itself lives on `document`: `PD.SystemDocument` owns id allocation
+The counter itself lives on `document`: `PC.SystemDocument` owns id allocation
 for the document it produces, so this registry delegates every id it hands out
 rather than keeping a second counter that could drift from the document's.
 
@@ -16,13 +16,13 @@ Not serialized: every field but `document` is recoverable from the emitted
 document, and `document` is serialized on its own terms.
 """
 struct IdRegistry
-    document::PD.SystemDocument
+    document::PC.SystemDocument
     by_name::Dict{Tuple{String, String}, Int}
     by_bus_number::Dict{Int, Int}
     arcs::Dict{Tuple{Int, Int}, Int}
 end
 
-function IdRegistry(document::PD.SystemDocument)
+function IdRegistry(document::PC.SystemDocument)
     return IdRegistry(
         document,
         Dict{Tuple{String, String}, Int}(),
@@ -34,7 +34,7 @@ end
 """Allocate an id without associating it with a name. For types the schemas give
 no `name` field, such as `TransformerCircuit`."""
 function next_id!(reg::IdRegistry)
-    return PD.next_id!(reg.document)
+    return PC.next_id!(reg.document)
 end
 
 """Allocate an id for `name` within `type_name`. Throws if that pair is taken."""

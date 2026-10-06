@@ -31,12 +31,10 @@ import InfrastructureCoreOpenAPIModels
 import PowerCoreOpenAPIModels
 import PowerOperationsOpenAPIModels
 import InfrastructureTimeSeriesOpenAPIModels
-import PowerOpenAPIModels
 const IC = InfrastructureCoreOpenAPIModels
 const PC = PowerCoreOpenAPIModels
 const PO = PowerOperationsOpenAPIModels
 const PTS = InfrastructureTimeSeriesOpenAPIModels
-const PD = PowerOpenAPIModels
 
 #################################################################################
 # Includes
