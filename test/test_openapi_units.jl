@@ -22,8 +22,6 @@ end
     @test PDP.get_value(reserve, :time_frame) ≈ 60.0
 
     storage = PDP.stage(PDP.PO.EnergyReservoirStorage)
-    # `prime_mover_type`/`storage_technology_type` staged before the power/energy-family
-    # field below, mirroring `make_storage`'s convention — see `_shadow` (units.jl).
     PDP.set_value!(storage, :prime_mover_type, "PS")
     PDP.set_value!(storage, :storage_technology_type, "OTHER_CHEM")
     PDP.set_value!(storage, :storage_capacity, 3600.0, "MJ")

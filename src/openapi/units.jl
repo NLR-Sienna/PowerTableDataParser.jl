@@ -45,10 +45,6 @@ old mutable `setproperty!` path did.
 _coerce(::Type{T}, value::T) where {T} = value
 _coerce(::Type{T}, value) where {T} = T(value)
 
-"""Whether `Absent` is one of `u`'s member types."""
-_has_absent(u::Union) = Absent in Base.uniontypes(u)
-_has_absent(::Type) = false
-
 """Whether `value` is `Absent`."""
 is_absent(::Absent) = true
 is_absent(_) = false
@@ -75,85 +71,6 @@ function _concrete_field_type(::Type{T}, prop::Symbol) where {T}
         )
     end
     return only(concrete)
-end
-
-"""A placeholder value for a required field this object has not staged yet.
-
-Only used to complete a [`_shadow`](@ref) instance so the generated per-instance
-`declared_unit`/`declared_quantity` methods have something to dispatch on; the discriminated
-field they actually read is always staged first (by convention, before its dependent
-fields), so a placeholder is never the value such a method consults.
-"""
-_placeholder(::Type{T}) where {T <: Integer} = zero(T)
-_placeholder(::Type{T}) where {T <: AbstractFloat} = zero(T)
-_placeholder(::Type{Bool}) = false
-_placeholder(::Type{String}) = ""
-_placeholder(::Type{Dict{K, V}}) where {K, V} = Dict{K, V}()
-_placeholder(::Type{Vector{T}}) where {T} = T[]
-
-"""
-A placeholder for a required oneOf-wrapper field (`FunctionData`, `*OperationCost`, ...):
-the first declared variant, itself placeholder-built recursively.
-
-A shadow only needs *some* valid instance to satisfy the outer struct's required kwarg —
-the generated `declared_unit`/`declared_quantity` methods it stands in for never read a
-oneOf field's own contents, only a plain sibling discriminator's — so which variant is
-picked is immaterial. `EnumAPIModel` gets no such case: unlike a oneOf member, an enum's
-inner constructor validates against a fixed string whitelist this package cannot enumerate,
-so a required enum field still falls through to the generic fallback below.
-"""
-function _placeholder(::Type{T}) where {T <: IC.OneOfAPIModel}
-    variant = first(Base.uniontypes(fieldtype(T, :value)))
-    return T(_placeholder(variant))
-end
-
-"""
-Recursive fallback: a required compound "shape" type (`MinMax`, `UpDown`, `FromTo`, ...) is
-plain numbers with no validation, so a zeroed instance is always constructible. A field
-named for one of the [`_DEFAULT_BASIS`](@ref) discriminators (`power_units`, ...) uses that
-same default, whatever struct it turns up nested in — a oneOf variant's own basis field
-(`CostCurve.power_units`, say) is exactly as placeholder-able as the top-level one
-`_default_bases!` defaults. A required field with no such shape and no case above (an enum
-wrapper outside that known set) means a caller staged a discriminated numeric field before
-the enum field its shadow needs — a genuine ordering bug, so this fails loudly rather than
-guessing a value.
-"""
-function _placeholder(::Type{T}) where {T}
-    kwargs = Dict{Symbol, Any}()
-    for name in fieldnames(T)
-        name === :additional_properties && continue
-        ftype = fieldtype(T, name)
-        _has_absent(ftype) && continue
-        concrete = _concrete_field_type(T, name)
-        kwargs[name] = if haskey(_DEFAULT_BASIS, name)
-            _coerce(concrete, _DEFAULT_BASIS[name])
-        else
-            _placeholder(concrete)
-        end
-    end
-    return T(; kwargs...)
-end
-
-"""
-A throw-away, fully valid `T` built from this object's fields staged so far, standing in for
-the real (not-yet-complete) component so the generated per-instance `declared_unit`/
-`declared_quantity` methods — which resolve a discriminated field's unit by reading a sibling
-basis field via `getproperty` — have a real `T` to dispatch on. Every field not yet staged
-gets a [`_placeholder`](@ref).
-"""
-function _shadow(s::Staged{T}) where {T}
-    kwargs = Dict{Symbol, Any}()
-    for name in fieldnames(T)
-        name === :additional_properties && continue
-        if haskey(s.fields, name)
-            kwargs[name] = s.fields[name]
-        else
-            ftype = fieldtype(T, name)
-            _has_absent(ftype) && continue
-            kwargs[name] = _placeholder(_concrete_field_type(T, name))
-        end
-    end
-    return T(; kwargs...)
 end
 
 """
@@ -188,27 +105,26 @@ Constructor for a compound property, e.g. `MinMax` for `ACBus.voltage_limits`.
 """
 _compound_type(::Type{T}, prop::Symbol) where {T} = _concrete_field_type(T, prop)
 
+"""
+`T.prop`'s declared unit and quantity, resolved by dispatch on the type plus the staged
+values of whatever discriminator fields select it (`power_units`, `parameter_units`, ...;
+see `IC.unit_discriminator`). A fixed unit reads no field at all. A discriminated one
+first fills in any unstaged [`_DEFAULT_BASIS`](@ref) discriminator.
+"""
 function _declared(s::Staged{T}, prop::Symbol) where {T}
-    if !IC.has_declared_unit(T, Val(prop))
+    p = Val(prop)
+    if !IC.has_declared_unit(T, p)
         throw(
             IS.DataFormatError(
                 "$(nameof(T)).$prop declares no unit; use the 3-argument set_value!",
             ),
         )
     end
-    # Most properties declare a fixed unit resolvable from the type alone; only a
-    # discriminated one needs an instance (a shadow stands in for the real, incomplete
-    # object) to read the sibling basis field its unit depends on. Trying the type-level
-    # form first avoids building a shadow — and the required-field placeholders that would
-    # need — for the common, non-discriminated case.
-    try
-        return IC.declared_unit(T, Val(prop)), IC.declared_quantity(T, Val(prop))
-    catch e
-        e isa ErrorException || rethrow()
+    if IC.unit_discriminator(T, p) !== nothing
+        _default_bases!(s)
     end
-    _default_bases!(s)
-    shadow = _shadow(s)
-    return IC.declared_unit(shadow, Val(prop)), IC.declared_quantity(shadow, Val(prop))
+    keys = IC.unit_keys(d -> _unwrap(get(s.fields, d, nothing)), T, p)
+    return IC.declared_unit(T, p, keys...), IC.declared_quantity(T, p, keys...)
 end
 
 function _reject_declared(s::Staged{T}, prop::Symbol) where {T}
@@ -223,19 +139,14 @@ function _reject_declared(s::Staged{T}, prop::Symbol) where {T}
     return
 end
 
-"""Best-effort unit label for an error message: resolves through a shadow instance for a
-discriminated property (mirroring `_declared`), falling back to `"?"` only if that also
-fails because some other required field has no default and is not yet staged — building
-its placeholder then raises a `MethodError`, since a plain (non-`@kwdef`) enum type has no
-keyword constructor for `_placeholder`'s generic fallback to call."""
-_placeholder_gap_label(::MethodError) = "?"
-_placeholder_gap_label(e) = rethrow(e)
-
+"""Best-effort unit label for an error message, falling back to `"?"` when a discriminator
+the unit depends on holds a value with no declared unit (or is not staged at all)."""
 function declared_unit_label(s::Staged{T}, prop::Symbol) where {T}
     return try
         first(_declared(s, prop))
     catch e
-        _placeholder_gap_label(e)
+        e isa ErrorException || rethrow()
+        "?"
     end
 end
 
