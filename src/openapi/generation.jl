@@ -316,7 +316,6 @@ function make_thermal_generator(
     set_value!(component, :available, gen.available)
     set_value!(component, :status, _thermal_status(gen.name, gen.status_at_start))
     set_value!(component, :bus, bus_id)
-    # `operation_cost` staged before any power-family field — see `_shadow` (units.jl).
     set_value!(
         component,
         :operation_cost,
@@ -390,8 +389,6 @@ function make_renewable_generator(
     set_value!(component, :name, gen.name)
     set_value!(component, :available, gen.available)
     set_value!(component, :bus, bus_id)
-    # `operation_cost`/`prime_mover_type` staged before any power-family field — see
-    # `_shadow` (units.jl).
     set_value!(
         component,
         :operation_cost,
@@ -431,8 +428,6 @@ function make_renewable_generator(
     set_value!(component, :name, gen.name)
     set_value!(component, :available, gen.available)
     set_value!(component, :bus, bus_id)
-    # `prime_mover_type` staged before any power-family field below — see `_shadow`
-    # (units.jl).
     set_value!(component, :prime_mover_type, prime_mover_type(gen.unit_type))
     set_value!(component, :active_power, gen.active_power, "MW")
     set_value!(component, :reactive_power, reactive_power, "MVAr")
@@ -462,8 +457,6 @@ function make_hydro_dispatch(
     set_value!(component, :name, gen.name)
     set_value!(component, :available, gen.available)
     set_value!(component, :bus, bus_id)
-    # `operation_cost`/`prime_mover_type` staged before any power-family field — see
-    # `_shadow` (units.jl).
     set_value!(
         component,
         :operation_cost,
@@ -542,7 +535,6 @@ function _add_reservoir!(
     set_value!(reservoir, :id, register!(get_registry(sys), "HydroReservoir", name))
     set_value!(reservoir, :name, name)
     set_value!(reservoir, :available, row.available)
-    # `head_to_volume_factor`/`operation_cost` staged first — see `_shadow` (units.jl).
     set_value!(
         reservoir,
         :head_to_volume_factor,
@@ -589,7 +581,6 @@ function make_hydro_turbine(
     set_value!(component, :name, gen.name)
     set_value!(component, :available, gen.available)
     set_value!(component, :bus, bus_id)
-    # `operation_cost` staged before any power-family field — see `_shadow` (units.jl).
     set_value!(
         component,
         :operation_cost,
@@ -646,8 +637,6 @@ function make_storage(
     set_value!(component, :bus, bus_id)
     set_value!(component, :prime_mover_type, prime_mover_type(gen.unit_type))
     set_value!(component, :storage_technology_type, "OTHER_CHEM")
-    # `operation_cost` staged before any power- or energy-family field — see `_shadow`
-    # (units.jl).
     set_value!(
         component,
         :operation_cost,
