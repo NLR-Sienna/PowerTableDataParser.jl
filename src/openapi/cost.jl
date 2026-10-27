@@ -136,7 +136,8 @@ end
 
 """The piecewise input-output data for a set of cost points."""
 function create_pwl_cost(cost_pairs)
-    points = [IC.XYCoords(; x = first(p), y = last(p)) for p in cost_pairs]
+    points =
+        [IC.TwoDimensionalFunctionPoint(; x = first(p), y = last(p)) for p in cost_pairs]
     return IC.PiecewiseLinearData(; function_type = "PIECEWISE_LINEAR", points = points)
 end
 
@@ -163,9 +164,9 @@ input-output curve rather than bare `QuadraticFunctionData`, since two of the
 three shapes are linear.
 """
 function create_poly_cost(gen::NamedTuple)
-    a2 = _maybe_float(gen.heat_rate_a2)
-    a1 = _maybe_float(gen.heat_rate_a1)
-    a0 = _maybe_float(gen.heat_rate_a0)
+    a2 = _heat_rate_mmbtu(gen.heat_rate_a2)
+    a1 = _heat_rate_mmbtu(gen.heat_rate_a1)
+    a0 = _heat_rate_mmbtu(gen.heat_rate_a0)
 
     if !isnothing(a2) && (isnothing(a1) || isnothing(a0))
         throw(
@@ -182,6 +183,9 @@ function create_poly_cost(gen::NamedTuple)
     end
     return linear_curve(a1, a0)
 end
+
+_heat_rate_mmbtu(value::Nothing) = nothing
+_heat_rate_mmbtu(value) = _as_float(value) * MBTU_TO_MMBTU
 
 function _maybe_float(value::Nothing)
     return nothing
@@ -224,9 +228,19 @@ function _pwinc_value_curve(gen::NamedTuple, cost_pairs)
     return linear_curve(0.0)
 end
 
-"""Fuel price per MBtu; the tables state it per MMBtu."""
+"""Fuel price per MMBtu, as the tables state it."""
 function fuel_price(gen::NamedTuple)
-    return _as_float(gen.fuel_price) / 1000.0
+    return _as_float(gen.fuel_price)
+end
+
+# The tables state heat rates in Btu/kWh (MBtu/MWh); the FuelCurve records MMBtu.
+const MBTU_TO_MMBTU = 1.0e-3
+
+"""Heat-rate cost pairs with the heat rate in MMBtu/MWh."""
+function heat_rate_pairs(gen::NamedTuple, cols::HeatRateColumns; per_unit::Bool = false)
+    return [
+        (x, y * MBTU_TO_MMBTU) for (x, y) in get_cost_pairs(gen, cols; per_unit = per_unit)
+    ]
 end
 
 function _vom_curve(gen::NamedTuple)
@@ -251,7 +265,7 @@ function calculate_uc_cost(gen::NamedTuple, price::Float64)
     if isnothing(start_up)
         fuel_cost = 0.0
         if !isnothing(gen.startup_heat_cold_cost)
-            fuel_cost = _as_float(gen.startup_heat_cold_cost) * price * 1000
+            fuel_cost = _as_float(gen.startup_heat_cold_cost) * price
         end
         non_fuel_cost = _maybe_float(get(gen, :non_fuel_startup_cost, nothing))
         if isnothing(non_fuel_cost)
@@ -289,7 +303,7 @@ function make_thermal_cost(
        isnothing(gen.heat_rate_a1) &&
        isnothing(gen.heat_rate_a2)
         value_curve =
-            _pwinc_value_curve(gen, get_cost_pairs(gen, cols; per_unit = per_unit))
+            _pwinc_value_curve(gen, heat_rate_pairs(gen, cols; per_unit = per_unit))
     else
         value_curve = create_poly_cost(gen)
     end
@@ -302,6 +316,7 @@ function make_thermal_cost(
                 power_units = IC.UnitSystem("NATURAL_UNITS"),
                 variable_cost_type = "FUEL",
                 fuel_cost = price,
+                fuel_units = PC.FuelUnit("MMBTU"),
                 vom_cost = _vom_curve(gen),
             ),
         ),
@@ -358,11 +373,15 @@ function make_hydro_cost(
         variable_operation_cost = PC.ProductionVariableCostCurve(
             PC.FuelCurve(;
                 value_curve = PC.ValueCurve(
-                    _pwinc_value_curve(gen, get_cost_pairs(gen, cols; per_unit = per_unit)),
+                    _pwinc_value_curve(
+                        gen,
+                        heat_rate_pairs(gen, cols; per_unit = per_unit),
+                    ),
                 ),
                 power_units = IC.UnitSystem("NATURAL_UNITS"),
                 variable_cost_type = "FUEL",
                 fuel_cost = price,
+                fuel_units = PC.FuelUnit("MMBTU"),
                 vom_cost = _vom_curve(gen),
             ),
         ),
