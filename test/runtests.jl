@@ -26,9 +26,9 @@ const DATA_DIR =
     joinpath(LazyArtifacts.artifact"CaseData", "PowerSystemsTestData-5.0-dev3")
 
 """
-The fixture's RTS_GMLC directory, minus the reservoir series it files under 201_HYDRO_4. That
-unit is run-of-river, built as a `HydroDispatch` with no reservoir, so the parser rejects
-them. Every other file is linked, not copied.
+The test system data's RTS_GMLC directory, minus the reservoir series it files under
+201_HYDRO_4. That unit is run-of-river, built as a `HydroDispatch` with no reservoir, so the
+parser rejects them. Every other file is linked, not copied.
 """
 function _rts_without_ror_reservoir_series(source::AbstractString)
     dir = mktempdir()
