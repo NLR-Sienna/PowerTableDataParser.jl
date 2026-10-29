@@ -26,8 +26,8 @@ end
 
 @testset "one staged row per owner, both resolutions kept" begin
     sys = _built()
-    # 256 pointer entries (after the fixture filter), of which the 6 zone load series fan
-    # out to the loads; each zone keeps a natural-units series of its own.
+    # 256 pointer entries (after the test system data filter), of which the 6 zone load
+    # series fan out to the loads; each zone keeps a natural-units series of its own.
     @test length(sys.time_series) == 358
     @test length(_rows_by_series(sys.time_series)) == 262
     resolutions = Set(IS.get_resolution(row.series) for row in sys.time_series)
