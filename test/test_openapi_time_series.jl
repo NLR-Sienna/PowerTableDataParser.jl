@@ -26,9 +26,10 @@ end
 
 @testset "one staged row per owner, both resolutions kept" begin
     sys = _built()
-    # 260 pointer entries, of which the 6 zone load series fan out to the loads.
-    @test length(sys.time_series) == 362
-    @test length(_rows_by_series(sys.time_series)) == 260
+    # 256 pointer entries (after the fixture filter), of which the 6 zone load series fan
+    # out to the loads; each zone keeps a natural-units series of its own.
+    @test length(sys.time_series) == 358
+    @test length(_rows_by_series(sys.time_series)) == 262
     resolutions = Set(IS.get_resolution(row.series) for row in sys.time_series)
     @test resolutions ==
           Set([Dates.Millisecond(Dates.Hour(1)), Dates.Millisecond(Dates.Minute(5))])
@@ -59,41 +60,84 @@ end
     @test_throws IS.DataFormatError PDP.keep_time_series_resolution!(sys, Dates.Minute(5))
 end
 
+# Owners whose series PowerSystems takes in natural units, so the parser converts them.
+_is_natural(row) =
+    row.owner_type == "LoadZone" || IS.get_name(row.series) in ("inflow", "outflow")
+
 @testset "a multiplier becomes device-base units on normalized values" begin
     sys = _built()
-    # Every RTS pointer entry declares a scaling_factor_multiplier, so every
-    # series stores normalized values tagged with the device-base units label
-    # in place of the removed multiplier metadata.
-    @test all(
-        IS.get_unit_system(row.series) == PDP.COMPONENT_BASE_UNIT_SYSTEM
-        for row in sys.time_series
-    )
-    zone_rows = [r for r in sys.time_series if r.owner_type == "LoadZone"]
-    # Normalized by the zone peak: per-unit values, nothing above 1.
-    for row in zone_rows
-        @test maximum(IS.get_array(row.series)) <= 1.0
+    # Every RTS pointer entry declares a scaling_factor_multiplier. Series PowerSystems
+    # takes per unit keep the normalized values, tagged with the device-base label in place
+    # of the removed multiplier metadata; the rest are converted to MW.
+    for row in sys.time_series
+        expected = _is_natural(row) ? IS.NU : PDP.COMPONENT_BASE_UNIT_SYSTEM
+        @test IS.get_unit_system(row.series) == expected
+    end
+    # A zone's series is its total load: the profile times its peak, never above the peak.
+    for row in filter(r -> r.owner_type == "LoadZone", sys.time_series)
+        zone = PDP._component(sys, "LoadZone", row.owner_id)
+        peak = PDP.get_value(zone, :peak_active_power, "MW")
+        @test 1.0 < maximum(IS.get_array(row.series)) <= peak
     end
 end
 
 @testset "a normalized series declares its basis and the quantity it scales to" begin
     sys = _built()
-    # Every RTS pointer declares a multiplier, so every series is per unit on its owner's
-    # own base. `units` stays unset: a per-unit basis is not a units label.
+    # Every RTS pointer declares a multiplier, so every series states a basis. `units` is
+    # set only on the natural-units ones: a per-unit basis is not a units label.
     for row in sys.time_series
-        @test IS.get_unit_system(row.series) == PDP.COMPONENT_BASE_UNIT_SYSTEM
-        @test isnothing(IS.get_units(row.series))
+        @test IS.get_units(row.series) == (_is_natural(row) ? "MW" : nothing)
         @test !isnothing(IS.get_quantity_kind(row.series))
     end
 
     # The quantity is the multiplier's own, not the accessor name. RTS reservoirs are
-    # accounted in ENERGY, so a level scales to energy and an inflow to power.
+    # accounted in ENERGY, so a level is energy and an inflow active power.
     by_name = Dict(
         IS.get_name(r.series) => IS.get_quantity_kind(r.series) for r in sys.time_series
     )
     @test by_name["max_active_power"] == "active_power"
     @test by_name["requirement"] == "active_power"
     @test by_name["storage_capacity"] == "energy"
-    @test by_name["inflow"] == "power"
+    @test by_name["inflow"] == "active_power"
+end
+
+@testset "a reservoir series filed under a turbine lands on its reservoir" begin
+    sys = _built()
+    # The RTS pointer file files inflow and storage capacity under the turbines.
+    reservoir_rows = filter(
+        r -> IS.get_name(r.series) in ("inflow", "storage_capacity"),
+        sys.time_series,
+    )
+    @test !isempty(reservoir_rows)
+    @test all(r -> r.owner_type == "HydroReservoir", reservoir_rows)
+    # An inflow is in MW: the profile times the reservoir's 1.0 inflow, read on the system
+    # base as psy5's formulations did.
+    raw = only(
+        p for p in PDP.read_time_series_pointers(
+            joinpath(RTS_GMLC_DIR, "timeseries_pointers.json"),
+        )
+        if p.name == "inflow" && p.component_name == "122_HYDRO_1" &&
+        p.resolution == Dates.Millisecond(Dates.Hour(1))
+    )
+    turbine_id = PDP.get_id(PDP.get_registry(sys), "HydroTurbine", "122_HYDRO_1")
+    row = only(
+        r for r in reservoir_rows if IS.get_name(r.series) == "inflow" &&
+        r.owner_id == PDP._head_reservoir_id(sys, "HydroTurbine", turbine_id) &&
+        IS.get_resolution(r.series) == raw.resolution
+    )
+    df = DataFrames.DataFrame(PDP.CSV.File(raw.data_file))
+    values, _ = PDP.read_pointer_csv_values(df, raw.component_name, raw.resolution)
+    @test IS.get_array(row.series) ≈
+          PDP._normalized(values, raw.normalization_factor) .* PDP.get_base_power(sys)
+
+    # A generator with no reservoir cannot carry one.
+    entry = PDP.TimeSeriesPointer(
+        "Generator", "201_HYDRO_4", "inflow", 1.0, "f.csv", Dates.Hour(1), "get_inflow",
+    )
+    dispatch_id = PDP.get_id(PDP.get_registry(sys), "HydroDispatch", "201_HYDRO_4")
+    @test_throws IS.DataFormatError PDP._series_basis(
+        sys, entry, "HydroDispatch", dispatch_id,
+    )
 end
 
 @testset "an unmapped or unnormalized multiplier is not silently unstated" begin
@@ -127,14 +171,10 @@ end
     zones = [r for r in sys.time_series if r.owner_type == "LoadZone"]
     @test length(zones) == 6
 
-    # The fan-out is rows against one shared series, not copied data.
-    groups = _rows_by_series(vcat(loads, zones))
-    @test length(groups) == 6
-    for rows in values(groups)
-        # One zone plus the loads beneath it share each series.
-        @test count(r -> r.owner_type == "LoadZone", rows) == 1
-        @test count(r -> r.owner_type == "PowerLoad", rows) == length(rows) - 1
-    end
+    # The fan-out is rows against one shared series per zone, not copied data. The zone's
+    # own series is in MW, so it is a separate one.
+    @test length(_rows_by_series(loads)) == 6
+    @test isempty(intersect(Set(r.series for r in loads), Set(r.series for r in zones)))
 end
 
 @testset "each fanned-out load belongs to the zone that owns the series" begin
@@ -147,14 +187,20 @@ end
         PDP.get_value(l, :id) => zone_of_bus[PDP.get_value(l, :bus)] for
         l in PDP.get_components(sys, "PowerLoad")
     )
-    zone_by_series = Dict(
-        r.series => r.owner_id for r in sys.time_series if r.owner_type == "LoadZone"
+    # The zone's MW series is its loads' shared profile times the zone peak.
+    zone_series = Dict(
+        (r.owner_id, IS.get_resolution(r.series)) => r.series for
+        r in sys.time_series if r.owner_type == "LoadZone"
     )
     for row in sys.time_series
         if row.owner_type != "PowerLoad"
             continue
         end
-        @test zone_of_load[row.owner_id] == zone_by_series[row.series]
+        zone_id = zone_of_load[row.owner_id]
+        zone = PDP._component(sys, "LoadZone", zone_id)
+        zone_mw = zone_series[(zone_id, IS.get_resolution(row.series))]
+        @test IS.get_array(zone_mw) ≈
+              IS.get_array(row.series) .* PDP.get_value(zone, :peak_active_power, "MW")
     end
 end
 
@@ -214,9 +260,12 @@ end
             staged_arrays = Set(IS.get_array(row.series) for row in sys.time_series)
             @test length(Set(m.data_hash for m in metadata)) == length(staged_arrays)
 
-            # The device-base declaration survives the round trip. It rides on unit_system,
-            # not the units label: a per-unit basis is not a unit.
-            @test all(m.unit_system == InfraStore.ComponentBase for m in metadata)
+            # The basis declaration survives the round trip. It rides on unit_system, not
+            # the units label: a per-unit basis is not a unit.
+            natural = count(_is_natural, sys.time_series)
+            @test count(m -> m.unit_system == InfraStore.NaturalUnits, metadata) == natural
+            @test count(m -> m.unit_system == InfraStore.ComponentBase, metadata) ==
+                  length(metadata) - natural
 
             # A full value round trip for one association: resolve the catalog id from
             # the metadata already listed above, then read by id.

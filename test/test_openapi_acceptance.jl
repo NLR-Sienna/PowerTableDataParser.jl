@@ -19,8 +19,8 @@
         @test length(PDP.get_components(sys, "EnergyReservoirStorage")) == 1
         @test length(PDP.get_components(sys, "PowerLoad")) == 51
         @test length(PDP.get_components(sys, "OnlineReserve")) == 7
-        @test length(sys.time_series) == 362
-        @test length(Set(row.series for row in sys.time_series)) == 260
+        @test length(sys.time_series) == 358
+        @test length(Set(row.series for row in sys.time_series)) == 262
     end
 
     @testset "referential integrity" begin

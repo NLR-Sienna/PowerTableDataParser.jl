@@ -24,7 +24,35 @@ Aqua.test_deps_compat(PowerTableDataParser)
 
 const DATA_DIR =
     joinpath(LazyArtifacts.artifact"CaseData", "PowerSystemsTestData-5.0-dev3")
-const RTS_GMLC_DIR = joinpath(DATA_DIR, "RTS_GMLC")
+
+"""
+The fixture's RTS_GMLC directory, minus the reservoir series it files under 201_HYDRO_4. That
+unit is run-of-river, built as a `HydroDispatch` with no reservoir, so the parser rejects
+them. Every other file is linked, not copied.
+"""
+function _rts_without_ror_reservoir_series(source::AbstractString)
+    dir = mktempdir()
+    for file in readdir(source)
+        file == "timeseries_pointers.json" && continue
+        symlink(joinpath(source, file), joinpath(dir, file))
+    end
+    pointers = JSON.parsefile(joinpath(source, "timeseries_pointers.json"))
+    filter!(
+        p -> !(
+            p["component_name"] == "201_HYDRO_4" &&
+            p["name"] in ("inflow", "storage_capacity")
+        ),
+        pointers,
+    )
+    # Data files are relative to the pointer file's own directory, which has moved.
+    for p in pointers
+        p["data_file"] = abspath(joinpath(source, p["data_file"]))
+    end
+    open(io -> JSON.print(io, pointers), joinpath(dir, "timeseries_pointers.json"), "w")
+    return dir
+end
+
+const RTS_GMLC_DIR = _rts_without_ror_reservoir_series(joinpath(DATA_DIR, "RTS_GMLC"))
 # PTDP ships its own copy: the fixture's descriptor points base_mva at
 # MATPOWER BaseMVA, which is 100.0 for every generator.
 const DESCRIPTORS = joinpath(@__DIR__, "descriptors", "rts_user_descriptors.yaml")
