@@ -178,14 +178,15 @@ _ts_values(component, name) =
         @test isnothing(IS.get_unit_system(direct))
         @test isnothing(IS.get_quantity_kind(direct))
 
-        # The zone's own series is the normalized shape, declared per unit on the
-        # component's base and naming the quantity it scales to.
+        # The zone's own series is its total load in MW: the normalized shape times the
+        # sum of its loads' maxima. Topology takes natural units only. The fixture's loads
+        # sum to 200 MW, the zone's normalization factor, so this is the file's values.
         shape = _ZONE_VALUES ./ 200.0
-        @test _ts_values(zone, "max_active_power") ≈ shape
+        @test _ts_values(zone, "max_active_power") ≈ _ZONE_VALUES
         zone_ts = PSY.get_time_series(PSY.SingleTimeSeries, zone, "max_active_power")
-        @test IS.get_unit_system(zone_ts) == IS.CU
+        @test IS.get_unit_system(zone_ts) == IS.NU
         @test IS.get_quantity_kind(zone_ts) == "active_power"
-        @test isnothing(IS.get_units(zone_ts))
+        @test IS.get_units(zone_ts) == "MW"
 
         # Fan-out: every load under the zone is associated with that same shape — one
         # array, not a scaled copy per load. load1 is skipped: it already carries a
