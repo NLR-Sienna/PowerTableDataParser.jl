@@ -9,8 +9,9 @@
     @test cost.cost_type == "THERMAL"
     @test cost.variable_operation_cost.value.variable_cost_type == "FUEL"
     @test cost.variable_operation_cost.value.fuel_cost > 0
-    # $/MMBtu in the table, $/MBtu in the model.
-    @test cost.variable_operation_cost.value.fuel_cost ≈ gen.fuel_price / 1000.0
+    # $/MMBtu in the table and in the model.
+    @test cost.variable_operation_cost.value.fuel_cost ≈ gen.fuel_price
+    @test cost.variable_operation_cost.value.fuel_units.value == "MMBTU"
     @test cost.variable_operation_cost.value.power_units.value == "NATURAL_UNITS"
     # Heat rates give an incremental curve over the output points.
     @test cost.variable_operation_cost.value.value_curve.value.curve_type == "INCREMENTAL"
@@ -76,17 +77,20 @@ end
     @test quad.function_data.value.quadratic_term ≈ 1.0
 end
 
-@testset "create_poly_cost reads the coefficients it is given" begin
+@testset "create_poly_cost reads the heat-rate coefficients in MMBtu" begin
     base = (
         name = "G",
         heat_rate_a0 = 1.0,
         heat_rate_a1 = 2.0,
         heat_rate_a2 = 3.0,
     )
-    @test PDP.create_poly_cost(base).function_data.value.function_type == "QUADRATIC"
+    quad = PDP.create_poly_cost(base).function_data.value
+    @test quad.function_type == "QUADRATIC"
+    # Btu/kWh in the table, MMBtu/MWh in the curve.
+    @test quad.quadratic_term ≈ 3.0e-3
 
     linear = merge(base, (heat_rate_a2 = nothing,))
-    @test PDP.create_poly_cost(linear).function_data.value.constant_term ≈ 1.0
+    @test PDP.create_poly_cost(linear).function_data.value.constant_term ≈ 1.0e-3
 
     proportional = merge(base, (heat_rate_a2 = nothing, heat_rate_a0 = nothing))
     @test iszero(PDP.create_poly_cost(proportional).function_data.value.constant_term)

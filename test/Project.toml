@@ -19,8 +19,8 @@ TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 # instead of the working tree, so local changes are never exercised.
 PowerTableDataParser = {path = ".."}
 # Branch pins until the psy6-line InfrastructureSystems and PowerSystems are registered.
-InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "IS4"}
-PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl.git", rev = "psy6"}
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "jd/sdk-0.3"}
+PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl.git", rev = "jd/sdk-0.3"}
 
 [compat]
 julia = "^1.10"
