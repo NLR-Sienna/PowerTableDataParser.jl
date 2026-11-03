@@ -65,7 +65,17 @@ function _pointer_test_system()
     PSY.set_name!(reservoir, "Reservoir1")
     PSY.set_level_data_type!(reservoir, PSY.ReservoirDataType.ENERGY)
     PSY.set_storage_level_limits!(reservoir, (min = 0.0, max = 500.0))
+    PSY.set_inflow!(reservoir, 0.5)
+    turbine = PSY.HydroTurbine(nothing)
+    PSY.set_name!(turbine, "Turbine1")
+    PSY.set_bus!(turbine, bus1)
+    PSY.add_component!(sys, turbine)
+    PSY.set_downstream_turbines!(reservoir, [turbine])
     PSY.add_component!(sys, reservoir)
+    battery = PSY.EnergyReservoirStorage(nothing)
+    PSY.set_name!(battery, "Battery1")
+    PSY.set_bus!(battery, bus1)
+    PSY.add_component!(sys, battery)
     return sys
 end
 
@@ -88,9 +98,9 @@ function _write_pointer_fixtures(dir)
         end
     end
     open(joinpath(dir, "fractions.csv"), "w") do io
-        println(io, "DateTime,Reserve1,Reservoir1")
+        println(io, "DateTime,Reserve1,Reservoir1,Turbine1,Battery1")
         for (h, v) in zip(hours, _DIRECT_VALUES)
-            println(io, "2024-01-01T$h,$v,$v")
+            println(io, "2024-01-01T$h,$v,$v,$v,$v")
         end
     end
     # Period-pivoted: one row per day, one column per 12-hour period, no
@@ -157,6 +167,28 @@ function _write_pointer_fixtures(dir)
         Dict(
             "category" => "Component",
             "component_name" => "Reservoir1",
+            "name" => "storage_target",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_storage_target",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        # A reservoir series filed under the turbine it feeds lands on the reservoir.
+        Dict(
+            "category" => "Generator",
+            "component_name" => "Turbine1",
+            "name" => "inflow",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_inflow",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        # A battery's level stays CU of its capacity.
+        Dict(
+            "category" => "Storage",
+            "component_name" => "Battery1",
             "name" => "storage_target",
             "normalization_factor" => 40.0,
             "scaling_factor_multiplier" => "get_storage_target",
@@ -263,6 +295,21 @@ _ts_values(component, name) =
             @test isnothing(IS.get_per_unit_of(ts))
             @test _ts_values(owner, name) ≈ _DIRECT_VALUES ./ 40.0 .* scale
         end
+
+        # The turbine's inflow is the reservoir's, in MW on the 100 MVA system base.
+        reservoir = PSY.get_component(PSY.HydroReservoir, sys, "Reservoir1")
+        turbine = PSY.get_component(PSY.HydroTurbine, sys, "Turbine1")
+        @test !PSY.has_time_series(turbine)
+        inflow = PSY.get_time_series(PSY.SingleTimeSeries, reservoir, "inflow")
+        @test IS.get_units(inflow) == "MW"
+        @test _ts_values(reservoir, "inflow") ≈ _DIRECT_VALUES ./ 40.0 .* 0.5 .* 100.0
+
+        battery = PSY.get_component(PSY.EnergyReservoirStorage, sys, "Battery1")
+        target = PSY.get_time_series(PSY.SingleTimeSeries, battery, "storage_target")
+        @test IS.get_unit_system(target) == IS.CU
+        @test IS.get_quantity_kind(target) == "energy"
+        @test IS.get_per_unit_of(target) == "storage_capacity"
+        @test _ts_values(battery, "storage_target") ≈ _DIRECT_VALUES ./ 40.0
 
         # The Deterministic-typed entry was skipped.
         @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "forecast")

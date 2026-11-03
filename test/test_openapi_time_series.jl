@@ -147,6 +147,31 @@ end
     )
 end
 
+@testset "zone reactive power and battery levels" begin
+    sys = _built()
+    zone = first(PDP.get_components(sys, "LoadZone"))
+    entry = PDP.TimeSeriesPointer(
+        "LoadZone", "z", "max_reactive_power", 1.0, "f.csv", Dates.Hour(1),
+        "get_max_reactive_power",
+    )
+    scale, labels = PDP._series_basis(sys, entry, "LoadZone", PDP.get_value(zone, :id))
+    @test scale ≈ PDP.get_value(zone, :peak_reactive_power, "MVAr")
+    @test labels == (unit_system = IS.NU, units = "MVAr", quantity_kind = "reactive_power")
+
+    battery = first(PDP.get_components(sys, "EnergyReservoirStorage"))
+    entry = PDP.TimeSeriesPointer(
+        "Storage", "b", "storage_target", 1.0, "f.csv", Dates.Hour(1),
+        "get_storage_target",
+    )
+    scale, labels = PDP._series_basis(
+        sys, entry, "EnergyReservoirStorage", PDP.get_value(battery, :id),
+    )
+    @test scale == 1.0
+    @test labels.unit_system == IS.CU
+    @test labels.quantity_kind == "energy"
+    @test labels.per_unit_of == "storage_capacity"
+end
+
 @testset "an unmapped or unnormalized multiplier is not silently unstated" begin
     sys = _built()
     reservoir = first(PDP.get_components(sys, "HydroReservoir"))

@@ -222,7 +222,9 @@ const TURBINE_TYPES = ("HydroTurbine", "HydroPumpTurbine")
 """The id of the reservoir that feeds a turbine: the one naming it downstream."""
 function _head_reservoir_id(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int)
     for reservoir in get_components(sys, "HydroReservoir")
-        owner_id in get_value(reservoir, :downstream_turbines) &&
+        # A tail reservoir is staged with upstream turbines only.
+        turbines = get_value(reservoir, :downstream_turbines)
+        turbines isa AbstractVector && owner_id in turbines &&
             return get_value(reservoir, :id)
     end
     throw(IS.DataFormatError("no HydroReservoir feeds $owner_type id=$owner_id"))
@@ -370,13 +372,15 @@ than relabeled:
 
 - A zone or area's own row is in MW. Its `peak_active_power` is the sum of its loads'
   `max_active_power` (`topology.jl`) and each load scales the profile by its own maximum, so
-  the profile times the peak is the zone's total load.
+  the profile times the peak is the zone's total load. Reactive power is the same in MVAr,
+  through `peak_reactive_power`.
 - A reserve's requirement is in MW: the profile times the reserve's own `requirement`.
 - A reservoir's inflow and outflow are in MW. The `inflow`/`outflow` fields hold 1.0, which
   the psy5 hydro formulations read as per unit of the system base; only `ENERGY` reservoirs
   are built here, so the flow is power.
 - A reservoir's level is in the natural unit of its quantity: the profile times its
   `storage_level_limits.max`.
+- A battery's level stays `CU`, per unit of its `storage_capacity`.
 - Every other multiplier keeps its values as `CU` of the owner's `base_power`, which
   `per_unit_of` says.
 
@@ -392,18 +396,36 @@ function _series_basis(
     multiplier = entry.scaling_factor_multiplier
     isnothing(multiplier) && return 1.0, (;)
     if haskey(AGGREGATION_BUS_PROPERTIES, owner_type)
-        multiplier == "get_max_active_power" || throw(
+        multiplier in FANNED_OUT_MULTIPLIERS || throw(
             IS.DataFormatError(
                 "$multiplier on $owner_type id=$owner_id; an aggregation's series must " *
-                "be normalized by get_max_active_power",
+                "be normalized by $(join(FANNED_OUT_MULTIPLIERS, " or "))",
             ),
         )
-        return _in_mw(sys, _component(sys, owner_type, owner_id), :peak_active_power),
-        (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
+        active = multiplier == "get_max_active_power"
+        peak = active ? :peak_active_power : :peak_reactive_power
+        units = active ? "MW" : "MVAr"
+        return _in_natural(sys, _component(sys, owner_type, owner_id), peak, units),
+        (
+            unit_system = IS.NU,
+            units = units,
+            quantity_kind = MULTIPLIER_QUANTITY_KINDS[multiplier],
+        )
     end
     if multiplier == "get_requirement"
-        return _in_mw(sys, _component(sys, owner_type, owner_id), :requirement),
+        return _in_natural(sys, _component(sys, owner_type, owner_id), :requirement, "MW"),
         (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
+    end
+    # A battery's level stays CU of its capacity.
+    if owner_type == "EnergyReservoirStorage" &&
+       haskey(RESERVOIR_QUANTITY_KINDS, multiplier) &&
+       !(multiplier in RESERVOIR_FLOW_MULTIPLIERS)
+        return 1.0,
+        (
+            unit_system = COMPONENT_BASE_UNIT_SYSTEM,
+            quantity_kind = "energy",
+            per_unit_of = "storage_capacity",
+        )
     end
     if haskey(RESERVOIR_QUANTITY_KINDS, multiplier) && owner_type != "HydroReservoir"
         throw(
@@ -447,11 +469,11 @@ function _series_basis(
 end
 
 # Per unit, a service's or an aggregation's power is on the system base, its only base.
-_in_mw(sys::OpenAPISystem, owner, field::Symbol) =
+_in_natural(sys::OpenAPISystem, owner, field::Symbol, units::AbstractString) =
     if uses_per_unit(sys)
         get_value(owner, field) * get_base_power(sys)
     else
-        get_value(owner, field, "MW")
+        get_value(owner, field, units)
     end
 
 """

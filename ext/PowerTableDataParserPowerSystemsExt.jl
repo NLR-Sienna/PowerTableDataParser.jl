@@ -76,6 +76,8 @@ function PDP.add_time_series_from_pointers!(
         component_type = _pointer_component_type(String(entry["category"]))
         component = PSY.get_component(component_type, sys, component_name)
         isnothing(component) && continue
+        multiplier = _pointer_multiplier(entry)
+        component = _series_owner(sys, component, multiplier)
         # (component, name) pairs are recorded once: a repeat is skipped rather than
         # assigned twice.
         key = (IS.get_id(component), name)
@@ -87,7 +89,6 @@ function PDP.add_time_series_from_pointers!(
         parsed = PDP.read_pointer_csv_values(df, component_name, entry_res)
         isnothing(parsed) && continue
         values, initial_timestamp = parsed
-        multiplier = _pointer_multiplier(entry)
         timestamps = range(initial_timestamp; step = entry_res, length = length(values))
         ta = TimeSeries.TimeArray(
             timestamps,
@@ -153,38 +154,37 @@ nothing declared otherwise — which is deliberately not the same as natural uni
 _series_unit_system(multiplier) = PDP._series_unit_system(multiplier)
 
 """
-How the reservoir behind a reservoir-normalized entry accounts its levels.
+The component a pointer's series belongs on. A series normalized by a reservoir field but
+filed under the turbine it feeds (both spellings are in circulation) belongs on the reservoir
+naming that turbine downstream, as in the document path.
+"""
+_series_owner(_sys, component, _multiplier) = component
 
-The owner is the reservoir when the pointer files the entry under `Component`, and the
-turbine it feeds when the pointer files it under `Generator`; both spellings are in
-circulation. Falls back to the system's reservoirs in that second case, and requires them to
-agree — with the owner not naming one, a mixed system gives no way to tell which convention
-applies.
+function _series_owner(
+    sys::PSY.System,
+    turbine::Union{PSY.HydroTurbine, PSY.HydroPumpTurbine},
+    multiplier,
+)
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, something(multiplier, "")) || return turbine
+    for reservoir in PSY.get_components(PSY.HydroReservoir, sys)
+        turbine in PSY.get_downstream_turbines(reservoir) && return reservoir
+    end
+    throw(IS.DataFormatError("no HydroReservoir feeds $(summary(turbine))"))
+end
+
+"""
+How the owner of a reservoir-normalized entry accounts its levels: a reservoir by its
+`level_data_type`, a battery in energy. PowerSystems takes these series on nothing else.
 """
 _reservoir_level_data_type(::PSY.System, component::PSY.HydroReservoir) =
     string(PSY.get_level_data_type(component))
-
-function _reservoir_level_data_type(sys::PSY.System, component)
-    level_types =
-        unique(
-            string(PSY.get_level_data_type(r))
-            for r in PSY.get_components(PSY.HydroReservoir, sys)
-        )
-    if length(level_types) != 1
-        stated = "several: $(join(sort(level_types), ", "))"
-        if isempty(level_types)
-            stated = "no level_data_type"
-        end
-        throw(
-            IS.DataFormatError(
-                "a reservoir-normalized series is owned by a $(typeof(component)) rather " *
-                "than the reservoir, and the system's reservoirs state $stated — so the " *
-                "quantity its values scale to cannot be determined",
-            ),
-        )
-    end
-    return only(level_types)
-end
+_reservoir_level_data_type(::PSY.System, ::PSY.EnergyReservoirStorage) = "ENERGY"
+_reservoir_level_data_type(::PSY.System, component) = throw(
+    IS.DataFormatError(
+        "a reservoir-normalized series on $(summary(component)); reservoir series belong " *
+        "on the HydroReservoir",
+    ),
+)
 
 """The multipliers that mean "this zonal profile is shared by the loads in the zone, each
 scaling it by its own peak"."""
