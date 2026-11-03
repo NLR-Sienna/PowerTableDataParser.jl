@@ -115,19 +115,14 @@ function PDP.add_time_series_from_pointers!(
 end
 
 """
-The owner field a series normalized by `multiplier` is a fraction of, which PowerSystems
-checks as `base_field`: the reserve's requirement, a storage capacity, or the device's
-`base_power` for power. `nothing` for an unnormalized series.
+The owner field a series kept in CU is a fraction of, which PowerSystems checks as
+`base_field`: a battery's `storage_capacity` for its levels, the device's `base_power` for
+power. `nothing` for an unnormalized series. Series PowerSystems takes in natural units only
+are converted by [`_own_association`](@ref) and never reach this.
 """
-_base_field(::Nothing, _component) = nothing
-function _base_field(multiplier::AbstractString, component)
-    multiplier == "get_requirement" && return :requirement
-    if haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier)
-        component isa PSY.EnergyReservoirStorage && return :storage_capacity
-        return :storage_level_limits
-    end
-    return :base_power
-end
+_base_field(::Nothing) = nothing
+_base_field(multiplier::AbstractString) =
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ? :storage_capacity : :base_power
 
 """The multiplier a pointer entry declares, as a `String`, or `nothing`."""
 function _pointer_multiplier(entry)
@@ -201,30 +196,66 @@ function _loads_under(sys::PSY.System, component::PSY.AggregationTopology)
     ]
 end
 
-"""How a pointer's series attaches to the component it names."""
+"""
+How a pointer's series attaches to the component it names. PowerSystems takes `CU` only for
+a device's power and a battery's levels, so the other owners' methods below convert their
+normalized profile to natural units, the profile times the field its multiplier names.
+"""
 _own_association(_sys, component, series, multiplier) =
-    (component, series, _base_field(multiplier, component))
+    (component, series, _base_field(multiplier))
+
+"""`series` scaled by `scale` into natural `units`, keeping its name and quantity."""
+_natural(series, scale, units) = PSY.SingleTimeSeries(
+    IS.get_name(series),
+    IS.get_data(series) .* scale;
+    unit_system = IS.NU,
+    units = units,
+    quantity_kind = IS.get_quantity_kind(series),
+)
 
 """
-A zone's or area's own row. PowerSystems takes topology series in natural units only. The
-profile is shared by the zone's loads, each scaling it by its own maximum, so the zone's row
-is the profile times the sum of those maxima: its total load.
+A zone's or area's own row. The profile is shared by the zone's loads, each scaling it by its
+own maximum, so the zone's row is the profile times the sum of those maxima: its total load.
 """
 function _own_association(sys, zone::PSY.AggregationTopology, series, multiplier)
     multiplier in _AGGREGATION_LOAD_MULTIPLIERS ||
-        return (zone, series, _base_field(multiplier, zone))
+        return (zone, series, _base_field(multiplier))
     active = multiplier == "get_max_active_power"
     maximum_of = active ? PSY.get_max_active_power : PSY.get_max_reactive_power
     total = sum(_load_maximum(maximum_of, load) for load in _loads_under(sys, zone);
         init = 0.0)
-    natural = PSY.SingleTimeSeries(
-        IS.get_name(series),
-        IS.get_data(series) .* total;
-        unit_system = IS.NU,
-        units = active ? "MW" : "MVAr",
-        quantity_kind = active ? "active_power" : "reactive_power",
-    )
-    return (zone, natural, nothing)
+    return (zone, _natural(series, total, active ? "MW" : "MVAr"), nothing)
+end
+
+"""A reserve's requirement row, in MW: the profile times its `requirement`."""
+function _own_association(_sys, reserve::PSY.Service, series, multiplier)
+    multiplier == "get_requirement" || return (reserve, series, _base_field(multiplier))
+    return (reserve, _natural(series, PSY.get_requirement(reserve, u"MW"), "MW"), nothing)
+end
+
+"""
+A reservoir's row. A level is the profile times `storage_level_limits.max`, in the natural
+unit of its quantity. A flow is the profile times the `inflow`/`outflow` field, which the
+psy5 hydro formulations read as per unit of the system base, so it is power and only an
+`ENERGY` reservoir's flow is converted, as the document path does.
+"""
+function _own_association(sys, reservoir::PSY.HydroReservoir, series, multiplier)
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ||
+        return (reservoir, series, _base_field(multiplier))
+    if multiplier in PDP.RESERVOIR_FLOW_MULTIPLIERS
+        PSY.get_level_data_type(reservoir) == PSY.ReservoirDataType.ENERGY || throw(
+            IS.DataFormatError(
+                "$multiplier on a $(PSY.get_level_data_type(reservoir)) reservoir; only " *
+                "ENERGY reservoir flows are converted",
+            ),
+        )
+        flow = multiplier == "get_inflow" ? PSY.get_inflow : PSY.get_outflow
+        scale = flow(reservoir) * PSY.get_base_power(sys)
+        return (reservoir, _natural(series, scale, "MW"), nothing)
+    end
+    scale = PSY.get_storage_level_limits(reservoir).max
+    units = PDP.RESERVOIR_LEVEL_UNITS[IS.get_quantity_kind(series)]
+    return (reservoir, _natural(series, scale, units), nothing)
 end
 
 # A load with no maximum (a `FixedAdmittance`, whose draw depends on voltage) has no share

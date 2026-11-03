@@ -60,15 +60,15 @@ end
     @test_throws IS.DataFormatError PDP.keep_time_series_resolution!(sys, Dates.Minute(5))
 end
 
-# Owners whose series PowerSystems takes in natural units, so the parser converts them.
-_is_natural(row) =
-    row.owner_type == "LoadZone" || IS.get_name(row.series) in ("inflow", "outflow")
+# Owners whose series PowerSystems takes in natural units, so the parser converts them:
+# everything but a device's power and a battery's levels.
+_is_natural(row) = row.owner_type in ("LoadZone", "OnlineReserve", "HydroReservoir")
 
 @testset "a multiplier becomes device-base units on normalized values" begin
     sys = _built()
     # Every RTS pointer entry declares a scaling_factor_multiplier. Series PowerSystems
     # takes per unit keep the normalized values, tagged with the device-base label in place
-    # of the removed multiplier metadata; the rest are converted to MW.
+    # of the removed multiplier metadata; the rest are converted to natural units.
     for row in sys.time_series
         expected = _is_natural(row) ? IS.NU : PDP.COMPONENT_BASE_UNIT_SYSTEM
         @test IS.get_unit_system(row.series) == expected
@@ -86,7 +86,7 @@ end
     # Every RTS pointer declares a multiplier, so every series states a basis. `units` is
     # set only on the natural-units ones: a per-unit basis is not a units label.
     for row in sys.time_series
-        @test IS.get_units(row.series) == (_is_natural(row) ? "MW" : nothing)
+        @test isnothing(IS.get_units(row.series)) == !_is_natural(row)
         @test !isnothing(IS.get_quantity_kind(row.series))
     end
 
@@ -99,6 +99,11 @@ end
     @test by_name["requirement"] == "active_power"
     @test by_name["storage_capacity"] == "energy"
     @test by_name["inflow"] == "active_power"
+    # An ENERGY reservoir's level is in MWh; every other natural series here is power.
+    for row in filter(_is_natural, sys.time_series)
+        expected = IS.get_name(row.series) == "storage_capacity" ? "MW*hr" : "MW"
+        @test IS.get_units(row.series) == expected
+    end
 end
 
 @testset "a reservoir series filed under a turbine lands on its reservoir" begin
@@ -234,10 +239,9 @@ end
     reserve_rows = [r for r in sys.time_series if r.owner_type == "OnlineReserve"]
     @test length(reserve_rows) == 12
     @test all(r -> IS.get_name(r.series) == "requirement", reserve_rows)
-    @test all(
-        r -> IS.get_unit_system(r.series) == PDP.COMPONENT_BASE_UNIT_SYSTEM,
-        reserve_rows,
-    )
+    # In MW: PowerSystems takes a reserve's series in natural units only.
+    @test all(r -> IS.get_unit_system(r.series) == IS.NU, reserve_rows)
+    @test all(r -> IS.get_units(r.series) == "MW", reserve_rows)
 end
 
 @testset "write_time_series persists the catalog and dedups arrays" begin

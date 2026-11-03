@@ -94,6 +94,12 @@ const RESERVOIR_FLOW_QUANTITIES = Dict(
 )
 
 """
+The natural unit of a reservoir level, by its quantity: the unit `storage_level_limits` is
+stated in.
+"""
+const RESERVOIR_LEVEL_UNITS = Dict("energy" => "MW*hr", "volume" => "m^3", "head" => "m")
+
+"""
 Multipliers whose quantity depends on how the owning reservoir accounts its levels, rather
 than being fixed by the multiplier alone.
 """
@@ -358,16 +364,19 @@ const RESERVOIR_FLOW_MULTIPLIERS = ("get_inflow", "get_outflow")
 How a pointer's normalized values are stored on one owner: the factor they are multiplied by
 and the units labels they carry.
 
-PowerSystems fixes what a `CU` series is a fraction of for each owner and quantity, so a
-multiplier naming some other field is converted to natural units here rather than
-relabeled:
+PowerSystems takes `CU` only for a device's power and a battery's stored energy; everything
+else is natural units only. So any other multiplier is converted to natural units here rather
+than relabeled:
 
 - A zone or area's own row is in MW. Its `peak_active_power` is the sum of its loads'
   `max_active_power` (`topology.jl`) and each load scales the profile by its own maximum, so
   the profile times the peak is the zone's total load.
+- A reserve's requirement is in MW: the profile times the reserve's own `requirement`.
 - A reservoir's inflow and outflow are in MW. The `inflow`/`outflow` fields hold 1.0, which
   the psy5 hydro formulations read as per unit of the system base; only `ENERGY` reservoirs
   are built here, so the flow is power.
+- A reservoir's level is in the natural unit of its quantity: the profile times its
+  `storage_level_limits.max`.
 - Every other multiplier keeps its values as `CU` of the owner.
 
 A reservoir multiplier on an owner that is not a reservoir is an error: PowerSystems takes
@@ -388,14 +397,11 @@ function _series_basis(
                 "be normalized by get_max_active_power",
             ),
         )
-        owner = _component(sys, owner_type, owner_id)
-        # Per unit, an aggregation's peak is on the system base, its only base.
-        peak = if uses_per_unit(sys)
-            get_value(owner, :peak_active_power) * get_base_power(sys)
-        else
-            get_value(owner, :peak_active_power, "MW")
-        end
-        return peak,
+        return _in_mw(sys, _component(sys, owner_type, owner_id), :peak_active_power),
+        (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
+    end
+    if multiplier == "get_requirement"
+        return _in_mw(sys, _component(sys, owner_type, owner_id), :requirement),
         (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
     end
     if haskey(RESERVOIR_QUANTITY_KINDS, multiplier) && owner_type != "HydroReservoir"
@@ -420,12 +426,30 @@ function _series_basis(
         return get_value(reservoir, field) * get_base_power(sys),
         (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
     end
+    if haskey(RESERVOIR_QUANTITY_KINDS, multiplier)
+        quantity = _series_quantity_kind(sys, entry, owner_type, owner_id)
+        reservoir = _component(sys, owner_type, owner_id)
+        return get_value(reservoir, :storage_level_limits).max,
+        (
+            unit_system = IS.NU,
+            units = RESERVOIR_LEVEL_UNITS[quantity],
+            quantity_kind = quantity,
+        )
+    end
     return 1.0,
     (
         unit_system = COMPONENT_BASE_UNIT_SYSTEM,
         quantity_kind = _series_quantity_kind(sys, entry, owner_type, owner_id),
     )
 end
+
+# Per unit, a service's or an aggregation's power is on the system base, its only base.
+_in_mw(sys::OpenAPISystem, owner, field::Symbol) =
+    if uses_per_unit(sys)
+        get_value(owner, field) * get_base_power(sys)
+    else
+        get_value(owner, field, "MW")
+    end
 
 """
 Read every series the pointer file names and stage one row per owner.

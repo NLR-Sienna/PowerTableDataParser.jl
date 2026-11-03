@@ -57,6 +57,15 @@ function _pointer_test_system()
             Y = 1.0 + 1.0im,
         ),
     )
+    reserve = PSY.OnlineReserve{PSY.ReserveUp}(nothing)
+    PSY.set_name!(reserve, "Reserve1")
+    PSY.add_service!(sys, reserve, PSY.Device[])
+    PSY.set_requirement!(reserve, 50.0u"MW")
+    reservoir = PSY.HydroReservoir(nothing)
+    PSY.set_name!(reservoir, "Reservoir1")
+    PSY.set_level_data_type!(reservoir, PSY.ReservoirDataType.ENERGY)
+    PSY.set_storage_level_limits!(reservoir, (min = 0.0, max = 500.0))
+    PSY.add_component!(sys, reservoir)
     return sys
 end
 
@@ -76,6 +85,12 @@ function _write_pointer_fixtures(dir)
         println(io, "DateTime,Zone1")
         for (h, v) in zip(hours, _ZONE_VALUES)
             println(io, "2024-01-01T$h,$v")
+        end
+    end
+    open(joinpath(dir, "fractions.csv"), "w") do io
+        println(io, "DateTime,Reserve1,Reservoir1")
+        for (h, v) in zip(hours, _DIRECT_VALUES)
+            println(io, "2024-01-01T$h,$v,$v")
         end
     end
     # Period-pivoted: one row per day, one column per 12-hour period, no
@@ -126,6 +141,27 @@ function _write_pointer_fixtures(dir)
             "normalization_factor" => 1.0,
             "data_file" => "pivoted.csv",
             "resolution" => 43200,
+            "type" => "SingleTimeSeries",
+        ),
+        # Normalized against fields PowerSystems takes no CU of, so stored in natural units.
+        Dict(
+            "category" => "Reserve",
+            "component_name" => "Reserve1",
+            "name" => "requirement",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_requirement",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        Dict(
+            "category" => "Component",
+            "component_name" => "Reservoir1",
+            "name" => "storage_target",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_storage_target",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
             "type" => "SingleTimeSeries",
         ),
         # Unsupported type: skipped, not an error.
@@ -210,6 +246,21 @@ _ts_values(component, name) =
         @test IS.get_initial_timestamp(ts) == Dates.DateTime(2024, 1, 1)
         @test Dates.Millisecond(IS.get_resolution(ts)) ==
               Dates.Millisecond(Dates.Second(43200))
+
+        # A reserve's requirement is in MW (the shape times its 50 MW requirement) and a
+        # reservoir's level in MWh (times its 500 MWh maximum).
+        for (owner, name, scale, units, quantity) in (
+            (PSY.get_component(PSY.OnlineReserve, sys, "Reserve1"), "requirement", 50.0,
+                "MW", "active_power"),
+            (PSY.get_component(PSY.HydroReservoir, sys, "Reservoir1"), "storage_target",
+                500.0, "MW*hr", "energy"),
+        )
+            ts = PSY.get_time_series(PSY.SingleTimeSeries, owner, name)
+            @test IS.get_unit_system(ts) == IS.NU
+            @test IS.get_units(ts) == units
+            @test IS.get_quantity_kind(ts) == quantity
+            @test _ts_values(owner, name) ≈ _DIRECT_VALUES ./ 40.0 .* scale
+        end
 
         # The Deterministic-typed entry was skipped.
         @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "forecast")
