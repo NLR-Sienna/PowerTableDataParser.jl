@@ -377,7 +377,8 @@ than relabeled:
   are built here, so the flow is power.
 - A reservoir's level is in the natural unit of its quantity: the profile times its
   `storage_level_limits.max`.
-- Every other multiplier keeps its values as `CU` of the owner.
+- Every other multiplier keeps its values as `CU` of the owner's `base_power`, which
+  `per_unit_of` says.
 
 A reservoir multiplier on an owner that is not a reservoir is an error: PowerSystems takes
 fluid series on reservoirs only.
@@ -436,10 +437,12 @@ function _series_basis(
             quantity_kind = quantity,
         )
     end
+    # Only a device's power is left: a fraction of its `base_power`.
     return 1.0,
     (
         unit_system = COMPONENT_BASE_UNIT_SYSTEM,
         quantity_kind = _series_quantity_kind(sys, entry, owner_type, owner_id),
+        per_unit_of = "base_power",
     )
 end
 

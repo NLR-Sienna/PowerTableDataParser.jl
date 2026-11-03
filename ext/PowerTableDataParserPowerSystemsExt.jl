@@ -41,8 +41,10 @@ Read a `timeseries_pointers.json` metadata file and attach the referenced time s
 by reading each CSV directly and constructing `SingleTimeSeries` objects.
 
 A pointer that declares a multiplier stores its values normalized by `normalization_factor`
-— per unit on the owner's own base — and says so: `unit_system` is the component base and
-`quantity_kind` names the physical quantity the values scale to.
+— per unit on the owner's own base — and says so: `unit_system` is the component base,
+`quantity_kind` names the physical quantity the values scale to, and `per_unit_of` the owner
+field they are a fraction of. Owners PowerSystems takes in natural units only get the
+profile converted instead; see [`_own_association`](@ref).
 
 `units` stays unset throughout: a per-unit basis is not a units label.
 
@@ -62,7 +64,7 @@ function PDP.add_time_series_from_pointers!(
     seen = Set{Tuple{Int, String}}()
     # Gathered while reading CSVs, written in one block afterwards: an open block
     # holds the store's write lock, so the slow parsing stays outside it.
-    associations = Tuple{Any, PSY.SingleTimeSeries, Union{Nothing, Symbol}}[]
+    associations = Tuple{Any, PSY.SingleTimeSeries}[]
     for entry in entries
         get(entry, "type", "SingleTimeSeries") == "SingleTimeSeries" || continue
         entry_res = Dates.Second(entry["resolution"])
@@ -96,6 +98,7 @@ function PDP.add_time_series_from_pointers!(
             ta;
             unit_system = _series_unit_system(multiplier),
             units = nothing,
+            per_unit_of = _per_unit_of(multiplier),
             quantity_kind = PDP.quantity_kind_for_multiplier(
                 multiplier,
                 () -> _reservoir_level_data_type(sys, component),
@@ -106,8 +109,8 @@ function PDP.add_time_series_from_pointers!(
     end
     if !isempty(associations)
         PSY.time_series_transaction(sys) do txn
-            for (component, ts, base_field) in associations
-                PSY.add_time_series!(txn, component, ts; base_field = base_field)
+            for (component, ts) in associations
+                PSY.add_time_series!(txn, component, ts)
             end
         end
     end
@@ -115,14 +118,14 @@ function PDP.add_time_series_from_pointers!(
 end
 
 """
-The owner field a series kept in CU is a fraction of, which PowerSystems checks as
-`base_field`: a battery's `storage_capacity` for its levels, the device's `base_power` for
-power. `nothing` for an unnormalized series. Series PowerSystems takes in natural units only
-are converted by [`_own_association`](@ref) and never reach this.
+The owner field a series kept in CU is a fraction of, its `per_unit_of` label: a battery's
+`storage_capacity` for its levels, the device's `base_power` for power. `nothing` for an
+unnormalized series. Series PowerSystems takes in natural units only are converted by
+[`_own_association`](@ref), which drops the label.
 """
-_base_field(::Nothing) = nothing
-_base_field(multiplier::AbstractString) =
-    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ? :storage_capacity : :base_power
+_per_unit_of(::Nothing) = nothing
+_per_unit_of(multiplier::AbstractString) =
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ? "storage_capacity" : "base_power"
 
 """The multiplier a pointer entry declares, as a `String`, or `nothing`."""
 function _pointer_multiplier(entry)
@@ -202,7 +205,7 @@ a device's power and a battery's levels, so the other owners' methods below conv
 normalized profile to natural units, the profile times the field its multiplier names.
 """
 _own_association(_sys, component, series, multiplier) =
-    (component, series, _base_field(multiplier))
+    (component, series)
 
 """`series` scaled by `scale` into natural `units`, keeping its name and quantity."""
 _natural(series, scale, units) = PSY.SingleTimeSeries(
@@ -219,18 +222,18 @@ own maximum, so the zone's row is the profile times the sum of those maxima: its
 """
 function _own_association(sys, zone::PSY.AggregationTopology, series, multiplier)
     multiplier in _AGGREGATION_LOAD_MULTIPLIERS ||
-        return (zone, series, _base_field(multiplier))
+        return (zone, series)
     active = multiplier == "get_max_active_power"
     maximum_of = active ? PSY.get_max_active_power : PSY.get_max_reactive_power
     total = sum(_load_maximum(maximum_of, load) for load in _loads_under(sys, zone);
         init = 0.0)
-    return (zone, _natural(series, total, active ? "MW" : "MVAr"), nothing)
+    return (zone, _natural(series, total, active ? "MW" : "MVAr"))
 end
 
 """A reserve's requirement row, in MW: the profile times its `requirement`."""
 function _own_association(_sys, reserve::PSY.Service, series, multiplier)
-    multiplier == "get_requirement" || return (reserve, series, _base_field(multiplier))
-    return (reserve, _natural(series, PSY.get_requirement(reserve, u"MW"), "MW"), nothing)
+    multiplier == "get_requirement" || return (reserve, series)
+    return (reserve, _natural(series, PSY.get_requirement(reserve, u"MW"), "MW"))
 end
 
 """
@@ -241,7 +244,7 @@ psy5 hydro formulations read as per unit of the system base, so it is power and 
 """
 function _own_association(sys, reservoir::PSY.HydroReservoir, series, multiplier)
     haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ||
-        return (reservoir, series, _base_field(multiplier))
+        return (reservoir, series)
     if multiplier in PDP.RESERVOIR_FLOW_MULTIPLIERS
         PSY.get_level_data_type(reservoir) == PSY.ReservoirDataType.ENERGY || throw(
             IS.DataFormatError(
@@ -251,11 +254,11 @@ function _own_association(sys, reservoir::PSY.HydroReservoir, series, multiplier
         )
         flow = multiplier == "get_inflow" ? PSY.get_inflow : PSY.get_outflow
         scale = flow(reservoir) * PSY.get_base_power(sys)
-        return (reservoir, _natural(series, scale, "MW"), nothing)
+        return (reservoir, _natural(series, scale, "MW"))
     end
     scale = PSY.get_storage_level_limits(reservoir).max
     units = PDP.RESERVOIR_LEVEL_UNITS[IS.get_quantity_kind(series)]
-    return (reservoir, _natural(series, scale, units), nothing)
+    return (reservoir, _natural(series, scale, units))
 end
 
 # A load with no maximum (a `FixedAdmittance`, whose draw depends on voltage) has no share
@@ -297,7 +300,7 @@ function _fan_out_aggregation_time_series!(
         key = (IS.get_id(load), name)
         key in seen && continue
         push!(seen, key)
-        push!(associations, (load, series, :base_power))
+        push!(associations, (load, series))
     end
     return
 end

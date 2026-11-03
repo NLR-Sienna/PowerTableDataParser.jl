@@ -233,6 +233,7 @@ _ts_values(component, name) =
             ts = PSY.get_time_series(PSY.SingleTimeSeries, follower, "max_active_power")
             @test IS.get_unit_system(ts) == IS.CU
             @test IS.get_quantity_kind(ts) == "active_power"
+            @test IS.get_per_unit_of(ts) == "base_power"
         end
         @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
 
@@ -259,6 +260,7 @@ _ts_values(component, name) =
             @test IS.get_unit_system(ts) == IS.NU
             @test IS.get_units(ts) == units
             @test IS.get_quantity_kind(ts) == quantity
+            @test isnothing(IS.get_per_unit_of(ts))
             @test _ts_values(owner, name) ≈ _DIRECT_VALUES ./ 40.0 .* scale
         end
 

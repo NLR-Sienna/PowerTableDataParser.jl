@@ -72,6 +72,8 @@ _is_natural(row) = row.owner_type in ("LoadZone", "OnlineReserve", "HydroReservo
     for row in sys.time_series
         expected = _is_natural(row) ? IS.NU : PDP.COMPONENT_BASE_UNIT_SYSTEM
         @test IS.get_unit_system(row.series) == expected
+        # The per-unit rows name the field they are a fraction of; natural ones none.
+        @test IS.get_per_unit_of(row.series) == (_is_natural(row) ? nothing : "base_power")
     end
     # A zone's series is its total load: the profile times its peak, never above the peak.
     for row in filter(r -> r.owner_type == "LoadZone", sys.time_series)
