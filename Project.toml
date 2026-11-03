@@ -23,9 +23,17 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 [weakdeps]
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 
+[extras]
+# Present only so the `[sources]` pin is legal: Pkg requires a sourced package to
+# appear in `deps` or `extras`.
+InfraStore = "6aee0376-896a-4a59-96ff-12f221c99746"
+
 [sources]
-# Branch pin until the psy6-line InfrastructureSystems is registered.
-InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "jd/sdk-0.3"}
+# TODO: back to IS4, and drop the InfraStore and time series model pins, once those
+# release `per_unit_of`.
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "lk/per-unit-of"}
+InfraStore = {url = "https://github.com/NatLabRockies/infrastore.git", rev = "lk/per-unit-of", subdir = "julia/InfraStore.jl"}
+InfrastructureTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "lk/per-unit-of", subdir = "InfrastructureTimeSeriesOpenAPIModels.jl"}
 
 [extensions]
 PowerTableDataParserPowerSystemsExt = ["PowerSystems", "TimeSeries"]
