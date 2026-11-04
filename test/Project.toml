@@ -1,4 +1,6 @@
 [deps]
+InfrastructureTimeSeriesOpenAPIModels = "37a216c8-a490-47cf-89d7-db2cb9618199"
+InfraStore = "6aee0376-896a-4a59-96ff-12f221c99746"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -19,8 +21,14 @@ TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 # instead of the working tree, so local changes are never exercised.
 PowerTableDataParser = {path = ".."}
 # Branch pins until the psy6-line InfrastructureSystems and PowerSystems are registered.
-InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "jd/sdk-0.3"}
-PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl.git", rev = "jd/sdk-0.3"}
+# TODO: back to IS4, and drop the InfraStore and time series model pins, once those
+# release `per_unit_of`.
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git", rev = "lk/per-unit-of"}
+InfraStore = {url = "https://github.com/NatLabRockies/infrastore.git", rev = "lk/per-unit-of", subdir = "julia/InfraStore.jl"}
+InfrastructureTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "lk/per-unit-of", subdir = "InfrastructureTimeSeriesOpenAPIModels.jl"}
+# TODO: revert to rev = "psy6" once PowerSystems.jl#1842 merges; the extension relies on
+# its time series units checks.
+PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl.git", rev = "lk/ts-units-prototype"}
 
 [compat]
 julia = "^1.10"

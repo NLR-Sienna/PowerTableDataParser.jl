@@ -57,6 +57,25 @@ function _pointer_test_system()
             Y = 1.0 + 1.0im,
         ),
     )
+    reserve = PSY.OnlineReserve{PSY.ReserveUp}(nothing)
+    PSY.set_name!(reserve, "Reserve1")
+    PSY.add_service!(sys, reserve, PSY.Device[])
+    PSY.set_requirement!(reserve, 50.0u"MW")
+    reservoir = PSY.HydroReservoir(nothing)
+    PSY.set_name!(reservoir, "Reservoir1")
+    PSY.set_level_data_type!(reservoir, PSY.ReservoirDataType.ENERGY)
+    PSY.set_storage_level_limits!(reservoir, (min = 0.0, max = 500.0))
+    PSY.set_inflow!(reservoir, 0.5)
+    turbine = PSY.HydroTurbine(nothing)
+    PSY.set_name!(turbine, "Turbine1")
+    PSY.set_bus!(turbine, bus1)
+    PSY.add_component!(sys, turbine)
+    PSY.set_downstream_turbines!(reservoir, [turbine])
+    PSY.add_component!(sys, reservoir)
+    battery = PSY.EnergyReservoirStorage(nothing)
+    PSY.set_name!(battery, "Battery1")
+    PSY.set_bus!(battery, bus1)
+    PSY.add_component!(sys, battery)
     return sys
 end
 
@@ -76,6 +95,12 @@ function _write_pointer_fixtures(dir)
         println(io, "DateTime,Zone1")
         for (h, v) in zip(hours, _ZONE_VALUES)
             println(io, "2024-01-01T$h,$v")
+        end
+    end
+    open(joinpath(dir, "fractions.csv"), "w") do io
+        println(io, "DateTime,Reserve1,Reservoir1,Turbine1,Battery1")
+        for (h, v) in zip(hours, _DIRECT_VALUES)
+            println(io, "2024-01-01T$h,$v,$v,$v,$v")
         end
     end
     # Period-pivoted: one row per day, one column per 12-hour period, no
@@ -128,6 +153,49 @@ function _write_pointer_fixtures(dir)
             "resolution" => 43200,
             "type" => "SingleTimeSeries",
         ),
+        # Normalized against fields PowerSystems takes no CU of, so stored in natural units.
+        Dict(
+            "category" => "Reserve",
+            "component_name" => "Reserve1",
+            "name" => "requirement",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_requirement",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        Dict(
+            "category" => "Component",
+            "component_name" => "Reservoir1",
+            "name" => "storage_target",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_storage_target",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        # A reservoir series filed under the turbine it feeds lands on the reservoir.
+        Dict(
+            "category" => "Generator",
+            "component_name" => "Turbine1",
+            "name" => "inflow",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_inflow",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        # A battery's level stays CU of its capacity.
+        Dict(
+            "category" => "Storage",
+            "component_name" => "Battery1",
+            "name" => "storage_target",
+            "normalization_factor" => 40.0,
+            "scaling_factor_multiplier" => "get_storage_target",
+            "data_file" => "fractions.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
         # Unsupported type: skipped, not an error.
         Dict(
             "category" => "PowerLoad",
@@ -178,14 +246,15 @@ _ts_values(component, name) =
         @test isnothing(IS.get_unit_system(direct))
         @test isnothing(IS.get_quantity_kind(direct))
 
-        # The zone's own series is the normalized shape, declared per unit on the
-        # component's base and naming the quantity it scales to.
+        # The zone's own series is its total load in MW: the normalized shape times the
+        # sum of its loads' maxima. Topology takes natural units only. The fixture's loads
+        # sum to 200 MW, the zone's normalization factor, so this is the file's values.
         shape = _ZONE_VALUES ./ 200.0
-        @test _ts_values(zone, "max_active_power") ≈ shape
+        @test _ts_values(zone, "max_active_power") ≈ _ZONE_VALUES
         zone_ts = PSY.get_time_series(PSY.SingleTimeSeries, zone, "max_active_power")
-        @test IS.get_unit_system(zone_ts) == IS.CU
+        @test IS.get_unit_system(zone_ts) == IS.NU
         @test IS.get_quantity_kind(zone_ts) == "active_power"
-        @test isnothing(IS.get_units(zone_ts))
+        @test IS.get_units(zone_ts) == "MW"
 
         # Fan-out: every load under the zone is associated with that same shape — one
         # array, not a scaled copy per load. load1 is skipped: it already carries a
@@ -196,6 +265,7 @@ _ts_values(component, name) =
             ts = PSY.get_time_series(PSY.SingleTimeSeries, follower, "max_active_power")
             @test IS.get_unit_system(ts) == IS.CU
             @test IS.get_quantity_kind(ts) == "active_power"
+            @test IS.get_per_unit_of(ts) == "base_power"
         end
         @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
 
@@ -209,6 +279,37 @@ _ts_values(component, name) =
         @test IS.get_initial_timestamp(ts) == Dates.DateTime(2024, 1, 1)
         @test Dates.Millisecond(IS.get_resolution(ts)) ==
               Dates.Millisecond(Dates.Second(43200))
+
+        # A reserve's requirement is in MW (the shape times its 50 MW requirement) and a
+        # reservoir's level in MWh (times its 500 MWh maximum).
+        for (owner, name, scale, units, quantity) in (
+            (PSY.get_component(PSY.OnlineReserve, sys, "Reserve1"), "requirement", 50.0,
+                "MW", "active_power"),
+            (PSY.get_component(PSY.HydroReservoir, sys, "Reservoir1"), "storage_target",
+                500.0, "MW*hr", "energy"),
+        )
+            ts = PSY.get_time_series(PSY.SingleTimeSeries, owner, name)
+            @test IS.get_unit_system(ts) == IS.NU
+            @test IS.get_units(ts) == units
+            @test IS.get_quantity_kind(ts) == quantity
+            @test isnothing(IS.get_per_unit_of(ts))
+            @test _ts_values(owner, name) ≈ _DIRECT_VALUES ./ 40.0 .* scale
+        end
+
+        # The turbine's inflow is the reservoir's, in MW on the 100 MVA system base.
+        reservoir = PSY.get_component(PSY.HydroReservoir, sys, "Reservoir1")
+        turbine = PSY.get_component(PSY.HydroTurbine, sys, "Turbine1")
+        @test !PSY.has_time_series(turbine)
+        inflow = PSY.get_time_series(PSY.SingleTimeSeries, reservoir, "inflow")
+        @test IS.get_units(inflow) == "MW"
+        @test _ts_values(reservoir, "inflow") ≈ _DIRECT_VALUES ./ 40.0 .* 0.5 .* 100.0
+
+        battery = PSY.get_component(PSY.EnergyReservoirStorage, sys, "Battery1")
+        target = PSY.get_time_series(PSY.SingleTimeSeries, battery, "storage_target")
+        @test IS.get_unit_system(target) == IS.CU
+        @test IS.get_quantity_kind(target) == "energy"
+        @test IS.get_per_unit_of(target) == "storage_capacity"
+        @test _ts_values(battery, "storage_target") ≈ _DIRECT_VALUES ./ 40.0
 
         # The Deterministic-typed entry was skipped.
         @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "forecast")

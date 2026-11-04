@@ -56,11 +56,11 @@ end
     # One row per staged series. The sidecar holds the values; these rows let a consumer see
     # what the bundle contains, and on what basis, without opening the store.
     rows = doc["time_series_associations"]
-    @test length(rows) == 362
+    @test length(rows) == 358
     row = first(rows)
     @test row["time_series_type"] == "SingleTimeSeries"
     @test row["owner_category"] == "Component"
-    @test row["unit_system"] == "COMPONENT_BASE"
+    @test Set(r["unit_system"] for r in rows) == Set(["COMPONENT_BASE", "NATURAL_UNITS"])
     @test !isempty(row["name"])
     # Every row points at a component the document declares.
     component_ids = Set(

@@ -12,6 +12,8 @@ import TimeSeries
 
 import InfrastructureSystems
 import PowerSystems
+# `u"NU"` resolves only where `PerUnit` is bound.
+using PowerSystems: @u_str, PerUnit
 import PowerTableDataParser
 
 const IS = InfrastructureSystems
@@ -39,8 +41,10 @@ Read a `timeseries_pointers.json` metadata file and attach the referenced time s
 by reading each CSV directly and constructing `SingleTimeSeries` objects.
 
 A pointer that declares a multiplier stores its values normalized by `normalization_factor`
-— per unit on the owner's own base — and says so: `unit_system` is the component base and
-`quantity_kind` names the physical quantity the values scale to.
+— per unit on the owner's own base — and says so: `unit_system` is the component base,
+`quantity_kind` names the physical quantity the values scale to, and `per_unit_of` the owner
+field they are a fraction of. Owners PowerSystems takes in natural units only get the
+profile converted instead; see [`_series_for`](@ref).
 
 `units` stays unset throughout: a per-unit basis is not a units label.
 
@@ -60,7 +64,7 @@ function PDP.add_time_series_from_pointers!(
     seen = Set{Tuple{Int, String}}()
     # Gathered while reading CSVs, written in one block afterwards: an open block
     # holds the store's write lock, so the slow parsing stays outside it.
-    associations = Tuple{Any, PSY.SingleTimeSeries}[]
+    associations = Tuple{PSY.Component, PSY.SingleTimeSeries}[]
     for entry in entries
         get(entry, "type", "SingleTimeSeries") == "SingleTimeSeries" || continue
         entry_res = Dates.Second(entry["resolution"])
@@ -72,6 +76,8 @@ function PDP.add_time_series_from_pointers!(
         component_type = _pointer_component_type(String(entry["category"]))
         component = PSY.get_component(component_type, sys, component_name)
         isnothing(component) && continue
+        multiplier = _pointer_multiplier(entry)
+        component = _series_owner(sys, component, multiplier)
         # (component, name) pairs are recorded once: a repeat is skipped rather than
         # assigned twice.
         key = (IS.get_id(component), name)
@@ -83,7 +89,6 @@ function PDP.add_time_series_from_pointers!(
         parsed = PDP.read_pointer_csv_values(df, component_name, entry_res)
         isnothing(parsed) && continue
         values, initial_timestamp = parsed
-        multiplier = _pointer_multiplier(entry)
         timestamps = range(initial_timestamp; step = entry_res, length = length(values))
         ta = TimeSeries.TimeArray(
             timestamps,
@@ -94,12 +99,13 @@ function PDP.add_time_series_from_pointers!(
             ta;
             unit_system = _series_unit_system(multiplier),
             units = nothing,
+            per_unit_of = _per_unit_of(multiplier),
             quantity_kind = PDP.quantity_kind_for_multiplier(
                 multiplier,
                 () -> _reservoir_level_data_type(sys, component),
             ),
         )
-        push!(associations, (component, series))
+        push!(associations, (component, _series_for(sys, component, series, multiplier)))
         _fan_out_aggregation_time_series!(associations, seen, sys, component, entry, series)
     end
     if !isempty(associations)
@@ -112,8 +118,18 @@ function PDP.add_time_series_from_pointers!(
     return
 end
 
+"""
+The owner field a series kept in CU is a fraction of, its `per_unit_of` label: a battery's
+`storage_capacity` for its levels, the device's `base_power` for power. `nothing` for an
+unnormalized series. Series PowerSystems takes in natural units only are converted by
+[`_series_for`](@ref), which drops the label.
+"""
+_per_unit_of(::Nothing) = nothing
+_per_unit_of(multiplier::AbstractString) =
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) ? "storage_capacity" : "base_power"
+
 """The multiplier a pointer entry declares, as a `String`, or `nothing`."""
-function _pointer_multiplier(entry)
+function _pointer_multiplier(entry::Dict{String, Any})
     multiplier = get(entry, "scaling_factor_multiplier", nothing)
     if isnothing(multiplier)
         return nothing
@@ -128,52 +144,156 @@ Only for an entry that declares a multiplier: without one the values are the dev
 quantities the file states and nothing normalizes them. The actual normalization is
 [`PowerTableDataParser._normalized`](@ref).
 """
-function _normalized(values::Vector{Float64}, factor, multiplier)
+function _normalized(
+    values::Vector{Float64},
+    factor::Union{Real, AbstractString},
+    multiplier::Union{Nothing, String},
+)
     isnothing(multiplier) && return values
     return PDP._normalized(values, PDP._normalization_factor(factor))
 end
 
 """The basis the values are stored in: the component's own base once normalized, and
 nothing declared otherwise — which is deliberately not the same as natural units."""
-_series_unit_system(multiplier) = PDP._series_unit_system(multiplier)
+_series_unit_system(multiplier::Union{Nothing, String}) = PDP._series_unit_system(multiplier)
 
 """
-How the reservoir behind a reservoir-normalized entry accounts its levels.
+The component a pointer's series belongs on. A series normalized by a reservoir field but
+filed under the turbine it feeds (both spellings are in circulation) belongs on the reservoir
+naming that turbine downstream, as in the document path.
+"""
+_series_owner(::PSY.System, component::PSY.Component, ::Union{Nothing, String}) =
+    component
 
-The owner is the reservoir when the pointer files the entry under `Component`, and the
-turbine it feeds when the pointer files it under `Generator`; both spellings are in
-circulation. Falls back to the system's reservoirs in that second case, and requires them to
-agree — with the owner not naming one, a mixed system gives no way to tell which convention
-applies.
+function _series_owner(
+    sys::PSY.System,
+    turbine::Union{PSY.HydroTurbine, PSY.HydroPumpTurbine},
+    multiplier::Union{Nothing, String},
+)
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, something(multiplier, "")) || return turbine
+    for reservoir in PSY.get_components(PSY.HydroReservoir, sys)
+        turbine in PSY.get_downstream_turbines(reservoir) && return reservoir
+    end
+    throw(IS.DataFormatError("no HydroReservoir feeds $(summary(turbine))"))
+end
+
+"""
+How the owner of a reservoir-normalized entry accounts its levels: a reservoir by its
+`level_data_type`, a battery in energy. PowerSystems takes these series on nothing else.
 """
 _reservoir_level_data_type(::PSY.System, component::PSY.HydroReservoir) =
     string(PSY.get_level_data_type(component))
-
-function _reservoir_level_data_type(sys::PSY.System, component)
-    level_types =
-        unique(
-            string(PSY.get_level_data_type(r))
-            for r in PSY.get_components(PSY.HydroReservoir, sys)
-        )
-    if length(level_types) != 1
-        stated = "several: $(join(sort(level_types), ", "))"
-        if isempty(level_types)
-            stated = "no level_data_type"
-        end
-        throw(
-            IS.DataFormatError(
-                "a reservoir-normalized series is owned by a $(typeof(component)) rather " *
-                "than the reservoir, and the system's reservoirs state $stated — so the " *
-                "quantity its values scale to cannot be determined",
-            ),
-        )
-    end
-    return only(level_types)
-end
+_reservoir_level_data_type(::PSY.System, ::PSY.EnergyReservoirStorage) = "ENERGY"
+_reservoir_level_data_type(::PSY.System, component::PSY.Component) = throw(
+    IS.DataFormatError(
+        "a reservoir-normalized series on $(summary(component)); reservoir series belong " *
+        "on the HydroReservoir",
+    ),
+)
 
 """The multipliers that mean "this zonal profile is shared by the loads in the zone, each
 scaling it by its own peak"."""
 const _AGGREGATION_LOAD_MULTIPLIERS = ("get_max_active_power", "get_max_reactive_power")
+
+"""The loads on the buses of an aggregation topology."""
+function _loads_under(sys::PSY.System, component::PSY.AggregationTopology)
+    bus_ids = Set(IS.get_id(bus) for bus in PSY.get_buses(sys, component))
+    return [
+        load for load in PSY.get_components(PSY.ElectricLoad, sys) if
+        IS.get_id(PSY.get_bus(load)) in bus_ids
+    ]
+end
+
+"""
+The series as PowerSystems takes it on `owner`. PowerSystems takes `CU` only for a device's
+power and a battery's levels, so those keep the pointer's series as it is, and the other
+owners' methods below convert the normalized profile to natural units: the profile times the
+field its multiplier names.
+"""
+_series_for(
+    ::PSY.System,
+    ::PSY.Component,
+    series::PSY.SingleTimeSeries,
+    ::Union{Nothing, String},
+) = series
+
+"""`series` scaled by `scale` into natural `units`, keeping its name and quantity."""
+_natural(series::PSY.SingleTimeSeries, scale::Real, units::String) = PSY.SingleTimeSeries(
+    IS.get_name(series),
+    IS.get_data(series) .* scale;
+    unit_system = IS.NU,
+    units = units,
+    quantity_kind = IS.get_quantity_kind(series),
+)
+
+"""
+A zone's or area's own row. The profile is shared by the zone's loads, each scaling it by its
+own maximum, so the zone's row is the profile times the sum of those maxima: its total load.
+"""
+function _series_for(
+    sys::PSY.System,
+    zone::PSY.AggregationTopology,
+    series::PSY.SingleTimeSeries,
+    multiplier::Union{Nothing, String},
+)
+    multiplier in _AGGREGATION_LOAD_MULTIPLIERS || return series
+    active = multiplier == "get_max_active_power"
+    maximum_of = active ? PSY.get_max_active_power : PSY.get_max_reactive_power
+    total = sum(_load_maximum(maximum_of, load) for load in _loads_under(sys, zone);
+        init = 0.0)
+    return _natural(series, total, active ? "MW" : "MVAr")
+end
+
+"""A reserve's requirement row, in MW: the profile times its `requirement`."""
+function _series_for(
+    ::PSY.System,
+    reserve::PSY.Service,
+    series::PSY.SingleTimeSeries,
+    multiplier::Union{Nothing, String},
+)
+    multiplier == "get_requirement" || return series
+    return _natural(series, PSY.get_requirement(reserve, u"MW"), "MW")
+end
+
+"""
+A reservoir's row. A level is the profile times `storage_level_limits.max`, in the natural
+unit of its quantity. A flow is the profile times the `inflow`/`outflow` field, which the
+psy5 hydro formulations read as per unit of the system base, so it is power and only an
+`ENERGY` reservoir's flow is converted, as the document path does.
+"""
+function _series_for(
+    sys::PSY.System,
+    reservoir::PSY.HydroReservoir,
+    series::PSY.SingleTimeSeries,
+    multiplier::Union{Nothing, String},
+)
+    haskey(PDP.RESERVOIR_QUANTITY_KINDS, multiplier) || return series
+    if multiplier in PDP.RESERVOIR_FLOW_MULTIPLIERS
+        PSY.get_level_data_type(reservoir) == PSY.ReservoirDataType.ENERGY || throw(
+            IS.DataFormatError(
+                "$multiplier on a $(PSY.get_level_data_type(reservoir)) reservoir; only " *
+                "ENERGY reservoir flows are converted",
+            ),
+        )
+        flow = multiplier == "get_inflow" ? PSY.get_inflow : PSY.get_outflow
+        scale = flow(reservoir) * PSY.get_base_power(sys)
+        return _natural(series, scale, "MW")
+    end
+    scale = PSY.get_storage_level_limits(reservoir).max
+    units = PDP.RESERVOIR_LEVEL_UNITS[IS.get_quantity_kind(series)]
+    return _natural(series, scale, units)
+end
+
+# A load with no maximum (a `FixedAdmittance`, whose draw depends on voltage) has no share
+# of a zone's total; the getters fall back to throwing for it.
+function _load_maximum(maximum_of::Function, load::PSY.ElectricLoad)
+    try
+        return maximum_of(load, u"NU")
+    catch e
+        e isa ArgumentError || rethrow()
+        return 0.0
+    end
+end
 
 """
 Associate an `AggregationTopology`'s load profile with the loads underneath it.
@@ -188,20 +308,18 @@ store deduplicates to and what lets a consumer scale each load by its own base. 
 any other pointer.
 """
 function _fan_out_aggregation_time_series!(
-    associations,
-    seen,
+    associations::Vector{Tuple{PSY.Component, PSY.SingleTimeSeries}},
+    seen::Set{Tuple{Int, String}},
     sys::PSY.System,
     component::PSY.AggregationTopology,
-    entry,
+    entry::Dict{String, Any},
     series::PSY.SingleTimeSeries,
 )
     multiplier = _pointer_multiplier(entry)
     multiplier in _AGGREGATION_LOAD_MULTIPLIERS || return
 
     name = IS.get_name(series)
-    bus_ids = Set(IS.get_id(bus) for bus in PSY.get_buses(sys, component))
-    for load in PSY.get_components(PSY.ElectricLoad, sys)
-        IS.get_id(PSY.get_bus(load)) in bus_ids || continue
+    for load in _loads_under(sys, component)
         key = (IS.get_id(load), name)
         key in seen && continue
         push!(seen, key)
@@ -211,12 +329,12 @@ function _fan_out_aggregation_time_series!(
 end
 
 _fan_out_aggregation_time_series!(
-    associations,
-    seen,
+    ::Vector{Tuple{PSY.Component, PSY.SingleTimeSeries}},
+    ::Set{Tuple{Int, String}},
     ::PSY.System,
-    component,
-    entry,
-    series::PSY.SingleTimeSeries,
+    ::PSY.Component,
+    ::Dict{String, Any},
+    ::PSY.SingleTimeSeries,
 ) = nothing
 
 end

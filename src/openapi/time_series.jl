@@ -87,11 +87,17 @@ head-accounted reservoir still takes its inflow as a volume — a head is a stat
 something that flows.
 """
 const RESERVOIR_FLOW_QUANTITIES = Dict(
-    "ENERGY" => "power",
-    "USABLE_VOLUME" => "volume_flow",
-    "TOTAL_VOLUME" => "volume_flow",
-    "HEAD" => "volume_flow",
+    "ENERGY" => "active_power",
+    "USABLE_VOLUME" => "volume_flow_rate",
+    "TOTAL_VOLUME" => "volume_flow_rate",
+    "HEAD" => "volume_flow_rate",
 )
+
+"""
+The natural unit of a reservoir level, by its quantity: the unit `storage_level_limits` is
+stated in.
+"""
+const RESERVOIR_LEVEL_UNITS = Dict("energy" => "MW*hr", "volume" => "m^3", "head" => "m")
 
 """
 Multipliers whose quantity depends on how the owning reservoir accounts its levels, rather
@@ -210,10 +216,26 @@ function _loads_under(sys::OpenAPISystem, owner_type::AbstractString, owner_id::
     return owners
 end
 
+"""Generator types that draw on a reservoir."""
+const TURBINE_TYPES = ("HydroTurbine", "HydroPumpTurbine")
+
+"""The id of the reservoir that feeds a turbine: the one naming it downstream."""
+function _head_reservoir_id(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int)
+    for reservoir in get_components(sys, "HydroReservoir")
+        # A tail reservoir is staged with upstream turbines only.
+        turbines = get_value(reservoir, :downstream_turbines)
+        turbines isa AbstractVector && owner_id in turbines &&
+            return get_value(reservoir, :id)
+    end
+    throw(IS.DataFormatError("no HydroReservoir feeds $owner_type id=$owner_id"))
+end
+
 """
 Every owner a pointer entry produces.
 
-Usually the entry names its owner directly. A load series stated for a zone or an
+Usually the entry names its owner directly. A series normalized by a reservoir field but
+filed under a turbine belongs to the reservoir feeding it, which is where PowerSystems keeps
+that field. A load series stated for a zone or an
 area is different: the normalized values describe the loads underneath, so each of
 them gets a row against the same series, and the aggregation keeps a row of its
 own. With the values stored per unit (`COMPONENT_BASE`), no per-owner scaling
@@ -226,6 +248,9 @@ function series_owners(
     owner_id::Int,
 )
     multiplier = entry.scaling_factor_multiplier
+    if haskey(RESERVOIR_QUANTITY_KINDS, multiplier) && owner_type in TURBINE_TYPES
+        return [("HydroReservoir", _head_reservoir_id(sys, owner_type, owner_id))]
+    end
     if !haskey(AGGREGATION_BUS_PROPERTIES, owner_type) ||
        isnothing(multiplier) ||
        !(multiplier in FANNED_OUT_MULTIPLIERS)
@@ -267,48 +292,22 @@ end
 _series_unit_system(entry::TimeSeriesPointer) =
     _series_unit_system(entry.scaling_factor_multiplier)
 
-"""
-The reservoir accounting convention a reservoir-normalized entry is stated against.
-
-The owner is not always the reservoir. A pointer files the entry under a `category`, and the
-two RTS pointer files in circulation disagree: one files reservoir series under `Component`,
-so they land on the `HydroReservoir`, and the other under `Generator`, so they land on the
-`HydroTurbine` the reservoir feeds. The convention is the reservoir's either way, so it is
-read off the owner when the owner is one and off the document's reservoirs when it is not.
-
-Requires the document's reservoirs to agree in that second case: with the owner not naming
-one, a mixed document gives no way to tell which convention applies, and guessing would
-mislabel the quantity rather than fail.
-"""
-function _reservoir_level_data_type(
-    sys::OpenAPISystem,
-    owner_type::AbstractString,
-    owner_id::Int,
-)
-    reservoirs = get_components(sys, "HydroReservoir")
-    if owner_type == "HydroReservoir"
-        for reservoir in reservoirs
-            get_value(reservoir, :id) == owner_id &&
-                return get_value(reservoir, :level_data_type)
-        end
-        throw(IS.DataFormatError("no HydroReservoir carries id=$owner_id"))
+"""The staged component of type `owner_type` with id `owner_id`."""
+function _component(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int)
+    for component in get_components(sys, owner_type)
+        get_value(component, :id) == owner_id && return component
     end
-    level_types = unique(get_value(r, :level_data_type) for r in reservoirs)
-    if length(level_types) != 1
-        stated = "several: $(join(sort(level_types), ", "))"
-        if isempty(level_types)
-            stated = "no level_data_type"
-        end
-        throw(
-            IS.DataFormatError(
-                "a reservoir-normalized series is owned by a $owner_type rather than the " *
-                "reservoir, and the document's reservoirs state $stated — so the " *
-                "quantity its values scale to cannot be determined",
-            ),
-        )
-    end
-    return only(level_types)
+    throw(IS.DataFormatError("no $owner_type carries id=$owner_id"))
 end
+
+"""
+The accounting convention of the reservoir a reservoir-normalized entry is stated against.
+
+Only a reservoir has one: [`_series_basis`](@ref) rejects a reservoir multiplier on any
+other owner before this is reached.
+"""
+_reservoir_level_data_type(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int) =
+    get_value(_component(sys, owner_type, owner_id), :level_data_type)
 
 """
 The physical quantity a multiplier's normalized values scale to; `nothing` for no multiplier,
@@ -360,6 +359,123 @@ _series_quantity_kind(
     () -> _reservoir_level_data_type(sys, owner_type, owner_id),
 )
 
+"""Multipliers that name a reservoir's flow rather than its level."""
+const RESERVOIR_FLOW_MULTIPLIERS = ("get_inflow", "get_outflow")
+
+"""
+How a pointer's normalized values are stored on one owner: the factor they are multiplied by
+and the units labels they carry.
+
+PowerSystems takes `CU` only for a device's power and a battery's stored energy; everything
+else is natural units only. So any other multiplier is converted to natural units here rather
+than relabeled:
+
+- A zone or area's own row is in MW. Its `peak_active_power` is the sum of its loads'
+  `max_active_power` (`topology.jl`) and each load scales the profile by its own maximum, so
+  the profile times the peak is the zone's total load. Reactive power is the same in MVAr,
+  through `peak_reactive_power`.
+- A reserve's requirement is in MW: the profile times the reserve's own `requirement`.
+- A reservoir's inflow and outflow are in MW. The `inflow`/`outflow` fields hold 1.0, which
+  the psy5 hydro formulations read as per unit of the system base; only `ENERGY` reservoirs
+  are built here, so the flow is power.
+- A reservoir's level is in the natural unit of its quantity: the profile times its
+  `storage_level_limits.max`.
+- A battery's level stays `CU`, per unit of its `storage_capacity`.
+- Every other multiplier keeps its values as `CU` of the owner's `base_power`, which
+  `per_unit_of` says.
+
+A reservoir multiplier on an owner that is not a reservoir is an error: PowerSystems takes
+fluid series on reservoirs only.
+"""
+function _series_basis(
+    sys::OpenAPISystem,
+    entry::TimeSeriesPointer,
+    owner_type::AbstractString,
+    owner_id::Int,
+)
+    multiplier = entry.scaling_factor_multiplier
+    isnothing(multiplier) && return 1.0, (;)
+    if haskey(AGGREGATION_BUS_PROPERTIES, owner_type)
+        multiplier in FANNED_OUT_MULTIPLIERS || throw(
+            IS.DataFormatError(
+                "$multiplier on $owner_type id=$owner_id; an aggregation's series must " *
+                "be normalized by $(join(FANNED_OUT_MULTIPLIERS, " or "))",
+            ),
+        )
+        active = multiplier == "get_max_active_power"
+        peak = active ? :peak_active_power : :peak_reactive_power
+        units = active ? "MW" : "MVAr"
+        return _in_natural(sys, _component(sys, owner_type, owner_id), peak, units),
+        (
+            unit_system = IS.NU,
+            units = units,
+            quantity_kind = MULTIPLIER_QUANTITY_KINDS[multiplier],
+        )
+    end
+    if multiplier == "get_requirement"
+        return _in_natural(sys, _component(sys, owner_type, owner_id), :requirement, "MW"),
+        (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
+    end
+    # A battery's level stays CU of its capacity.
+    if owner_type == "EnergyReservoirStorage" &&
+       haskey(RESERVOIR_QUANTITY_KINDS, multiplier) &&
+       !(multiplier in RESERVOIR_FLOW_MULTIPLIERS)
+        return 1.0,
+        (
+            unit_system = COMPONENT_BASE_UNIT_SYSTEM,
+            quantity_kind = "energy",
+            per_unit_of = "storage_capacity",
+        )
+    end
+    if haskey(RESERVOIR_QUANTITY_KINDS, multiplier) && owner_type != "HydroReservoir"
+        throw(
+            IS.DataFormatError(
+                "$(entry.name) on $owner_type $(entry.component_name) is normalized by " *
+                "$multiplier, a reservoir field; reservoir series belong on the " *
+                "HydroReservoir",
+            ),
+        )
+    end
+    if multiplier in RESERVOIR_FLOW_MULTIPLIERS
+        reservoir = _component(sys, owner_type, owner_id)
+        level_type = get_value(reservoir, :level_data_type)
+        level_type == "ENERGY" || throw(
+            IS.DataFormatError(
+                "$multiplier on a $level_type reservoir; only ENERGY reservoir flows " *
+                "are converted",
+            ),
+        )
+        field = Symbol(chopprefix(multiplier, "get_"))
+        return get_value(reservoir, field) * get_base_power(sys),
+        (unit_system = IS.NU, units = "MW", quantity_kind = "active_power")
+    end
+    if haskey(RESERVOIR_QUANTITY_KINDS, multiplier)
+        quantity = _series_quantity_kind(sys, entry, owner_type, owner_id)
+        reservoir = _component(sys, owner_type, owner_id)
+        return get_value(reservoir, :storage_level_limits).max,
+        (
+            unit_system = IS.NU,
+            units = RESERVOIR_LEVEL_UNITS[quantity],
+            quantity_kind = quantity,
+        )
+    end
+    # Only a device's power is left: a fraction of its `base_power`.
+    return 1.0,
+    (
+        unit_system = COMPONENT_BASE_UNIT_SYSTEM,
+        quantity_kind = _series_quantity_kind(sys, entry, owner_type, owner_id),
+        per_unit_of = "base_power",
+    )
+end
+
+# Per unit, a service's or an aggregation's power is on the system base, its only base.
+_in_natural(sys::OpenAPISystem, owner, field::Symbol, units::AbstractString) =
+    if uses_per_unit(sys)
+        get_value(owner, field) * get_base_power(sys)
+    else
+        get_value(owner, field, units)
+    end
+
 """
 Read every series the pointer file names and stage one row per owner.
 
@@ -390,15 +506,20 @@ function add_time_series!(sys::OpenAPISystem, metadata_file::AbstractString)
             )
         end
         values, initial_timestamp = parsed
-        series = IS.SingleTimeSeries(
-            entry.name,
-            initial_timestamp,
-            entry.resolution,
-            _normalized(values, entry.normalization_factor);
-            unit_system = _series_unit_system(entry),
-            quantity_kind = _series_quantity_kind(sys, entry, owner_type, owner_id),
-        )
+        normalized = _normalized(values, entry.normalization_factor)
+        # Owners on the same basis share one series; the store dedups the rest by content.
+        by_basis = Dict{Any, IS.SingleTimeSeries}()
         for (target_type, target_id) in series_owners(sys, entry, owner_type, owner_id)
+            scale, labels = _series_basis(sys, entry, target_type, target_id)
+            series = get!(by_basis, (scale, labels)) do
+                IS.SingleTimeSeries(
+                    entry.name,
+                    initial_timestamp,
+                    entry.resolution,
+                    normalized .* scale;
+                    labels...,
+                )
+            end
             push!(sys.time_series, StagedTimeSeries(target_type, target_id, series))
         end
     end

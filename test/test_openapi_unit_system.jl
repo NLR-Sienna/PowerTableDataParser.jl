@@ -104,7 +104,7 @@ end
             @test length(doc["components"]["ACBus"]) == 73
             # The rows ride in both conventions; each component states its own basis,
             # while each row states the basis of its series.
-            @test length(doc["time_series_associations"]) == 362
+            @test length(doc["time_series_associations"]) == 358
         end
     end
 end
