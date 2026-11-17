@@ -86,9 +86,9 @@ const _PIVOTED_VALUES = [1.0, 2.0, 3.0, 4.0]
 function _write_pointer_fixtures(dir)
     hours = ["00:00:00", "01:00:00", "02:00:00", "03:00:00"]
     open(joinpath(dir, "direct.csv"), "w") do io
-        println(io, "DateTime,load1")
+        println(io, "DateTime,load1,load2")
         for (h, v) in zip(hours, _DIRECT_VALUES)
-            println(io, "2024-01-01T$h,$v")
+            println(io, "2024-01-01T$h,$v,$v")
         end
     end
     open(joinpath(dir, "zone.csv"), "w") do io
@@ -141,6 +141,17 @@ function _write_pointer_fixtures(dir)
             "normalization_factor" => 200.0,
             "scaling_factor_multiplier" => "get_max_active_power",
             "data_file" => "zone.csv",
+            "resolution" => 3600,
+            "type" => "SingleTimeSeries",
+        ),
+        # States its units: stored as the CSV gives it, under those labels.
+        Dict(
+            "category" => "PowerLoad",
+            "component_name" => "load2",
+            "name" => "max_active_power",
+            "units" => "MW",
+            "quantity_kind" => "active_power",
+            "data_file" => "direct.csv",
             "resolution" => 3600,
             "type" => "SingleTimeSeries",
         ),
@@ -224,6 +235,27 @@ function _write_pointer_fixtures(dir)
     return pointer_file
 end
 
+@testset "stated units and quantity come as a pair, not mixed with a multiplier" begin
+    entry(; kw...) = Dict{String, Any}(
+        "name" => "max_active_power", "component_name" => "g", (string(k) => v for (k, v) in kw)...,
+    )
+    @test PDP.stated_labels(entry()) == (nothing, nothing)
+    @test PDP.stated_labels(entry(; units = "MW", quantity_kind = "active_power")) ==
+          ("MW", "active_power")
+    @test_throws IS.DataFormatError PDP.stated_labels(entry(; units = "MW"))
+    @test_throws IS.DataFormatError PDP.stated_labels(entry(; quantity_kind = "active_power"))
+    @test_throws IS.DataFormatError PDP.stated_labels(
+        entry(; units = "MW", quantity_kind = "active_power", normalization_factor = 50.0),
+    )
+    @test_throws IS.DataFormatError PDP.stated_labels(
+        entry(;
+            units = "MW",
+            quantity_kind = "active_power",
+            scaling_factor_multiplier = "get_max_active_power",
+        ),
+    )
+end
+
 _ts_values(component, name) =
     PSY.get_time_series_values(PSY.SingleTimeSeries, component, name)
 
@@ -269,8 +301,17 @@ _ts_values(component, name) =
         end
         @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
 
-        # load2 is outside the zone, so it never takes the zonal profile.
-        @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "max_active_power")
+        # load2 is outside the zone, so it never takes the zonal profile; its own entry
+        # states MW, so it holds the CSV as given, labeled as stated.
+        stated = PSY.get_time_series(PSY.SingleTimeSeries, load2, "max_active_power")
+        @test _ts_values(load2, "max_active_power") == _DIRECT_VALUES
+        @test IS.get_unit_system(stated) == IS.NU
+        @test IS.get_units(stated) == "MW"
+        @test IS.get_quantity_kind(stated) == "active_power"
+        @test isnothing(IS.get_per_unit_of(stated))
+        @test PSY.get_time_series_values(
+            PSY.SingleTimeSeries, load2, "max_active_power", u"CU",
+        ) ≈ _DIRECT_VALUES ./ 100.0
 
         # Period-pivoted layout flattens row-major from the Year/Month/Day origin.
         ts = PSY.get_time_series(PSY.SingleTimeSeries, load2, "requirement")
@@ -330,6 +371,6 @@ end
         load2 = PSY.get_component(PSY.PowerLoad, sys, "load2")
         @test _ts_values(load1, "max_active_power") ≈ _DIRECT_VALUES
         # The 12-hour pivoted entry does not match the filter.
-        @test !PSY.has_time_series(load2)
+        @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "requirement")
     end
 end

@@ -20,6 +20,33 @@ Defined by the extension that loads with PowerSystems:
 function add_time_series_from_pointers! end
 
 """
+The `units` and `quantity_kind` a pointer entry states for its CSV, or `(nothing, nothing)`
+for a legacy entry that states neither.
+
+An entry that states them is data in those units: its CSV is stored as given, under those
+labels. They come as a pair, and they replace the legacy `scaling_factor_multiplier` /
+`normalization_factor` convention rather than mixing with it, so an entry carrying both is
+rejected instead of having one silently win.
+"""
+function stated_labels(entry::AbstractDict)
+    units = get(entry, "units", nothing)
+    quantity_kind = get(entry, "quantity_kind", nothing)
+    isnothing(units) && isnothing(quantity_kind) && return (nothing, nothing)
+    where = "time series $(entry["name"]) for $(entry["component_name"])"
+    (isnothing(units) || isnothing(quantity_kind)) && throw(
+        IS.DataFormatError("$where states only one of units and quantity_kind"),
+    )
+    legacy = filter(k -> haskey(entry, k), ["scaling_factor_multiplier", "normalization_factor"])
+    isempty(legacy) || throw(
+        IS.DataFormatError(
+            "$where states units and also $(join(legacy, " and ")); a stated series is " *
+            "stored as given, so drop the legacy fields",
+        ),
+    )
+    return (String(units), String(quantity_kind))
+end
+
+"""
 Values and initial timestamp for one component in a pointer entry's CSV.
 
 The CSVs use either a column-per-component layout — one row per timestep, indexed

@@ -140,6 +140,7 @@ end
     # A generator with no reservoir cannot carry one.
     entry = PDP.TimeSeriesPointer(
         "Generator", "201_HYDRO_4", "inflow", 1.0, "f.csv", Dates.Hour(1), "get_inflow",
+        nothing, nothing,
     )
     dispatch_id = PDP.get_id(PDP.get_registry(sys), "HydroDispatch", "201_HYDRO_4")
     @test_throws IS.DataFormatError PDP._series_basis(
@@ -152,7 +153,7 @@ end
     zone = first(PDP.get_components(sys, "LoadZone"))
     entry = PDP.TimeSeriesPointer(
         "LoadZone", "z", "max_reactive_power", 1.0, "f.csv", Dates.Hour(1),
-        "get_max_reactive_power",
+        "get_max_reactive_power", nothing, nothing,
     )
     scale, labels = PDP._series_basis(sys, entry, "LoadZone", PDP.get_value(zone, :id))
     @test scale ≈ PDP.get_value(zone, :peak_reactive_power, "MVAr")
@@ -161,7 +162,7 @@ end
     battery = first(PDP.get_components(sys, "EnergyReservoirStorage"))
     entry = PDP.TimeSeriesPointer(
         "Storage", "b", "storage_target", 1.0, "f.csv", Dates.Hour(1),
-        "get_storage_target",
+        "get_storage_target", nothing, nothing,
     )
     scale, labels = PDP._series_basis(
         sys, entry, "EnergyReservoirStorage", PDP.get_value(battery, :id),
@@ -171,11 +172,26 @@ end
     @test labels.per_unit_of == "storage_capacity"
 end
 
+@testset "a stated series is stored as given, on the owner it names" begin
+    sys = _built()
+    zone = first(PDP.get_components(sys, "LoadZone"))
+    zone_id = PDP.get_value(zone, :id)
+    entry = PDP.TimeSeriesPointer(
+        "LoadZone", "z", "max_active_power", 1.0, "f.csv", Dates.Hour(1), nothing,
+        "MW", "active_power",
+    )
+    # No fan-out and no scaling: those are the legacy multiplier's.
+    @test PDP.series_owners(sys, entry, "LoadZone", zone_id) == [("LoadZone", zone_id)]
+    @test PDP._series_basis(sys, entry, "LoadZone", zone_id) ==
+          (1.0, (units = "MW", quantity_kind = "active_power"))
+end
+
 @testset "an unmapped or unnormalized multiplier is not silently unstated" begin
     sys = _built()
     reservoir = first(PDP.get_components(sys, "HydroReservoir"))
     entry = PDP.TimeSeriesPointer(
         "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), "get_weather",
+        nothing, nothing,
     )
     @test_throws IS.DataFormatError PDP._series_quantity_kind(
         sys, entry, "HydroReservoir", PDP.get_value(reservoir, :id),
@@ -183,7 +199,7 @@ end
 
     # No multiplier means no declared basis, so no quantity to name either.
     bare = PDP.TimeSeriesPointer(
-        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), nothing,
+        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), nothing, nothing, nothing,
     )
     @test isnothing(
         PDP._series_quantity_kind(

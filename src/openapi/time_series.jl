@@ -116,6 +116,9 @@ const RESERVOIR_QUANTITY_KINDS = Dict(
 """
 One entry of a time series pointer file.
 
+`units` and `quantity_kind` are what the entry states for its CSV ([`stated_labels`](@ref)); a
+legacy entry states neither and goes by `scaling_factor_multiplier` and `normalization_factor`.
+
 The `type` field is read and checked directly rather than resolved through IS's
 module-loading path: every RTS entry names `PowerSystems`, which this package does not
 depend on.
@@ -128,6 +131,8 @@ struct TimeSeriesPointer
     data_file::String
     resolution::Dates.Period
     scaling_factor_multiplier::Union{Nothing, String}
+    units::Union{Nothing, String}
+    quantity_kind::Union{Nothing, String}
 end
 
 """A pointer's `normalization_factor`, as the `"max"` string or a `Float64`."""
@@ -144,7 +149,8 @@ function _pointer(item::Dict, directory::AbstractString)
             ),
         )
     end
-    normalization_factor = _normalization_factor(item["normalization_factor"])
+    units, quantity_kind = stated_labels(item)
+    normalization_factor = _normalization_factor(get(item, "normalization_factor", 1.0))
     multiplier = get(item, "scaling_factor_multiplier", nothing)
     if !isnothing(multiplier)
         multiplier = String(multiplier)
@@ -157,6 +163,8 @@ function _pointer(item::Dict, directory::AbstractString)
         abspath(joinpath(directory, item["data_file"])),
         Dates.Millisecond(Dates.Second(item["resolution"])),
         multiplier,
+        units,
+        quantity_kind,
     )
 end
 
@@ -353,6 +361,9 @@ const RESERVOIR_FLOW_MULTIPLIERS = ("get_inflow", "get_outflow")
 How a pointer's normalized values are stored on one owner: the factor they are multiplied by
 and the units labels they carry.
 
+An entry that states its units is stored as given, under those labels. The rest of this is the
+legacy multiplier convention:
+
 PowerSystems takes `CU` only for a device's power and a battery's stored energy; everything
 else is natural units only. So any other multiplier is converted to natural units here rather
 than relabeled:
@@ -381,7 +392,10 @@ function _series_basis(
     owner_id::Int,
 )
     multiplier = entry.scaling_factor_multiplier
-    isnothing(multiplier) && return 1.0, (;)
+    if isnothing(multiplier)
+        isnothing(entry.units) && return 1.0, (;)
+        return 1.0, (units = entry.units, quantity_kind = entry.quantity_kind)
+    end
     if haskey(AGGREGATION_BUS_PROPERTIES, owner_type)
         multiplier in FANNED_OUT_MULTIPLIERS || throw(
             IS.DataFormatError(

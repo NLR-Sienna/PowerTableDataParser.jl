@@ -40,13 +40,16 @@ _as_component_type(::Any) = PSY.Component
 Read a `timeseries_pointers.json` metadata file and attach the referenced time series
 by reading each CSV directly and constructing `SingleTimeSeries` objects.
 
+A pointer that states `units` and `quantity_kind` is stored as its CSV gives it, under those
+labels ([`PowerTableDataParser.stated_labels`](@ref)). The rest is the legacy convention.
+
 A pointer that declares a multiplier stores its values normalized by `normalization_factor`
 — per unit on the owner's own base — and says so: `per_unit_of` names the owner field they
 are a fraction of (from which IS derives the component base), and `quantity_kind` the
 physical quantity the values scale to. Owners PowerSystems takes in natural units only get the
 profile converted instead; see [`_series_for`](@ref).
 
-`units` stays unset throughout: a per-unit basis is not a units label.
+`units` stays unset on a legacy CU series: a per-unit basis is not a units label.
 
 The CSVs use either a single `DateTime` index column or `Year, Month, Day, Period` index
 columns, followed by one value column per `component_name`.
@@ -76,6 +79,7 @@ function PDP.add_time_series_from_pointers!(
         component_type = _pointer_component_type(String(entry["category"]))
         component = PSY.get_component(component_type, sys, component_name)
         isnothing(component) && continue
+        units, quantity_kind = PDP.stated_labels(entry)
         multiplier = _pointer_multiplier(entry)
         component = _series_owner(sys, component, multiplier)
         # (component, name) pairs are recorded once: a repeat is skipped rather than
@@ -97,9 +101,10 @@ function PDP.add_time_series_from_pointers!(
         series = PSY.SingleTimeSeries(
             name,
             ta;
-            units = nothing,
+            units = units,
             per_unit_of = _per_unit_of(multiplier),
-            quantity_kind = PDP.quantity_kind_for_multiplier(
+            quantity_kind = isnothing(multiplier) ? quantity_kind :
+                            PDP.quantity_kind_for_multiplier(
                 multiplier,
                 () -> _reservoir_level_data_type(sys, component),
             ),
