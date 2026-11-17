@@ -40,13 +40,16 @@ _as_component_type(::Any) = PSY.Component
 Read a `timeseries_pointers.json` metadata file and attach the referenced time series
 by reading each CSV directly and constructing `SingleTimeSeries` objects.
 
+A pointer that states `units` and `quantity_kind` is stored as its CSV gives it, under those
+labels ([`PowerTableDataParser.stated_labels`](@ref)). The rest is the legacy convention.
+
 A pointer that declares a multiplier stores its values normalized by `normalization_factor`
 — per unit on the owner's own base — and says so: `per_unit_of` names the owner field they
 are a fraction of (from which IS derives the component base), and `quantity_kind` the
 physical quantity the values scale to. Owners PowerSystems takes in natural units only get the
 profile converted instead; see [`_series_for`](@ref).
 
-`units` stays unset throughout: a per-unit basis is not a units label.
+`units` stays unset on a legacy CU series: a per-unit basis is not a units label.
 
 The CSVs use either a single `DateTime` index column or `Year, Month, Day, Period` index
 columns, followed by one value column per `component_name`.
@@ -76,6 +79,7 @@ function PDP.add_time_series_from_pointers!(
         component_type = _pointer_component_type(String(entry["category"]))
         component = PSY.get_component(component_type, sys, component_name)
         isnothing(component) && continue
+        units, quantity_kind = PDP.stated_labels(entry)
         multiplier = _pointer_multiplier(entry)
         component = _series_owner(sys, component, multiplier)
         # (component, name) pairs are recorded once: a repeat is skipped rather than
@@ -97,9 +101,10 @@ function PDP.add_time_series_from_pointers!(
         series = PSY.SingleTimeSeries(
             name,
             ta;
-            units = nothing,
+            units = units,
             per_unit_of = _per_unit_of(multiplier),
-            quantity_kind = PDP.quantity_kind_for_multiplier(
+            quantity_kind = isnothing(multiplier) ? quantity_kind :
+                            PDP.quantity_kind_for_multiplier(
                 multiplier,
                 () -> _reservoir_level_data_type(sys, component),
             ),
@@ -310,6 +315,12 @@ function _fan_out_aggregation_time_series!(
     series::PSY.SingleTimeSeries,
 )
     multiplier = _pointer_multiplier(entry)
+    if isnothing(multiplier)
+        quantity = IS.get_quantity_kind(series)
+        haskey(_LOAD_SHARE_GETTERS, something(quantity, "")) || return
+        return _share_out!(associations, seen, sys, component, series,
+            _LOAD_SHARE_GETTERS[quantity])
+    end
     multiplier in _AGGREGATION_LOAD_MULTIPLIERS || return
 
     name = IS.get_name(series)
@@ -318,6 +329,48 @@ function _fan_out_aggregation_time_series!(
         key in seen && continue
         push!(seen, key)
         push!(associations, (load, series))
+    end
+    return
+end
+
+"""The load maximum a stated zone or area series of each quantity is shared out by."""
+const _LOAD_SHARE_GETTERS = Dict(
+    "active_power" => PSY.get_max_active_power,
+    "reactive_power" => PSY.get_max_reactive_power,
+)
+
+"""
+Give each load under `zone` its share of the zone's stated series, upstream RTS-GMLC's rule:
+the series times `max / Σ max`, stored in CU of the load's own `base_power`. Loads rebased so
+their maximum is their `base_power` share one series. A load with no maximum (a
+`FixedAdmittance`) takes no share.
+"""
+function _share_out!(
+    associations::Vector{Tuple{PSY.Component, PSY.SingleTimeSeries}},
+    seen::Set{Tuple{Int, String}},
+    sys::PSY.System,
+    zone::PSY.AggregationTopology,
+    series::PSY.SingleTimeSeries,
+    maximum_of::Function,
+)
+    loads = filter(l -> _load_maximum(maximum_of, l) > 0, _loads_under(sys, zone))
+    total = sum(l -> _load_maximum(maximum_of, l), loads; init = 0.0)
+    name = IS.get_name(series)
+    by_share = Dict{Float64, PSY.SingleTimeSeries}()
+    for load in loads
+        key = (IS.get_id(load), name)
+        key in seen && continue
+        push!(seen, key)
+        share = maximum_of(load, u"CU") / total
+        shared = get!(by_share, share) do
+            PSY.SingleTimeSeries(
+                name,
+                IS.get_data(series) .* share;
+                quantity_kind = IS.get_quantity_kind(series),
+                per_unit_of = "base_power",
+            )
+        end
+        push!(associations, (load, shared))
     end
     return
 end

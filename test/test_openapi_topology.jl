@@ -70,7 +70,8 @@ end
     @test PDP.get_value(abel, :reactive_power) ≈ 22.0
     @test PDP.get_value(abel, :max_active_power) ≈ 108.0
     @test PDP.get_value(abel, :max_reactive_power) ≈ 22.0
-    @test PDP.get_value(abel, :base_power) ≈ 100.0
+    # The descriptors make each load its own base, so a zone's load series is one array.
+    @test PDP.get_value(abel, :base_power) ≈ 108.0
 
     bus_ids = Set(PDP.get_value(b, :id) for b in PDP.get_components(sys, "ACBus"))
     @test all(l -> PDP.get_value(l, :bus) in bus_ids, loads)
