@@ -58,8 +58,8 @@ end
     natural = _named(_system("NATURAL_UNITS"), "PowerLoad", "Abel")
     per_unit = _named(_system("COMPONENT_BASE"), "PowerLoad", "Abel")
     @test PDP.get_value(natural, :max_active_power) ≈ 108.0
-    # The bus load's base is the system base.
-    @test PDP.get_value(per_unit, :max_active_power) ≈ 1.08
+    # The descriptors make the bus load its own base.
+    @test PDP.get_value(per_unit, :max_active_power) ≈ 1.0
 
     natural_reserve = _named(_system("NATURAL_UNITS"), "OnlineReserve", "Spin_Up_R1")
     per_unit_reserve = _named(_system("COMPONENT_BASE"), "OnlineReserve", "Spin_Up_R1")

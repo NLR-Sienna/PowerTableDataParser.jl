@@ -172,18 +172,33 @@ end
     @test labels.per_unit_of == "storage_capacity"
 end
 
-@testset "a stated series is stored as given, on the owner it names" begin
+@testset "a stated zone series is the zone's own, and shared out to its loads" begin
     sys = _built()
     zone = first(PDP.get_components(sys, "LoadZone"))
     zone_id = PDP.get_value(zone, :id)
     entry = PDP.TimeSeriesPointer(
-        "LoadZone", "z", "max_active_power", 1.0, "f.csv", Dates.Hour(1), nothing,
-        "MW", "active_power",
+        "LoadZone", PDP.get_value(zone, :name), "max_active_power", 1.0, "f.csv",
+        Dates.Hour(1), nothing, "MW", "active_power",
     )
-    # No fan-out and no scaling: those are the legacy multiplier's.
-    @test PDP.series_owners(sys, entry, "LoadZone", zone_id) == [("LoadZone", zone_id)]
+    owners = PDP.series_owners(sys, entry, "LoadZone", zone_id)
+    @test last(owners) == ("LoadZone", zone_id)
+    loads = owners[1:(end - 1)]
+    @test !isempty(loads)
+
+    # The zone keeps the CSV as given.
     @test PDP._series_basis(sys, entry, "LoadZone", zone_id) ==
           (1.0, (units = "MW", quantity_kind = "active_power"))
+
+    # Each load takes its share of the zone's total, per unit of its own base.
+    component(t, id) = PDP._component(sys, t, id)
+    total = sum(PDP.get_value(component(o...), :max_active_power, "MW") for o in loads)
+    for (t, id) in loads
+        load = component(t, id)
+        scale, labels = PDP._series_basis(sys, entry, t, id)
+        @test labels == (quantity_kind = "active_power", per_unit_of = "base_power")
+        @test scale * PDP.get_value(load, :base_power, "MVA") ≈
+              PDP.get_value(load, :max_active_power, "MW") / total
+    end
 end
 
 @testset "an unmapped or unnormalized multiplier is not silently unstated" begin

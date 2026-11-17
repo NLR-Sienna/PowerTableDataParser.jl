@@ -195,6 +195,21 @@ const AGGREGATION_BUS_PROPERTIES = Dict("LoadZone" => "load_zone", "Area" => "ar
 """Multipliers that make a series belong to the loads rather than the aggregation."""
 const FANNED_OUT_MULTIPLIERS = ("get_max_active_power", "get_max_reactive_power")
 
+"""
+The load field a stated zone or area series of each quantity is shared out by: upstream
+RTS-GMLC's rule, each bus taking the regional series times its share of the region's load.
+"""
+const LOAD_SHARE_FIELDS =
+    Dict("active_power" => :max_active_power, "reactive_power" => :max_reactive_power)
+
+"""Whether `entry`'s series on an `owner_type` also belongs to the loads underneath it."""
+function _fans_out(entry::TimeSeriesPointer, owner_type::AbstractString)
+    haskey(AGGREGATION_BUS_PROPERTIES, owner_type) || return false
+    multiplier = entry.scaling_factor_multiplier
+    isnothing(multiplier) || return multiplier in FANNED_OUT_MULTIPLIERS
+    return haskey(LOAD_SHARE_FIELDS, something(entry.quantity_kind, ""))
+end
+
 """Component types that carry a load series.
 
 Includes `FixedAdmittance`: any `ElectricLoad` subtype sharing a bus with the aggregation is
@@ -259,15 +274,57 @@ function series_owners(
     if haskey(RESERVOIR_QUANTITY_KINDS, multiplier) && owner_type in TURBINE_TYPES
         return [("HydroReservoir", _head_reservoir_id(sys, owner_type, owner_id))]
     end
-    if !haskey(AGGREGATION_BUS_PROPERTIES, owner_type) ||
-       isnothing(multiplier) ||
-       !(multiplier in FANNED_OUT_MULTIPLIERS)
-        return [(owner_type, owner_id)]
+    _fans_out(entry, owner_type) || return [(owner_type, owner_id)]
+    owners = if isnothing(multiplier)
+        _sharing_loads(sys, owner_type, owner_id, LOAD_SHARE_FIELDS[entry.quantity_kind])
+    else
+        _loads_under(sys, owner_type, owner_id)
     end
-
-    owners = _loads_under(sys, owner_type, owner_id)
     push!(owners, (owner_type, owner_id))
     return owners
+end
+
+"""
+The loads under an aggregation that take a share of its stated series: those with a
+`field` maximum. A `FixedAdmittance` has none (its draw depends on voltage), so no share.
+"""
+_sharing_loads(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int, field::Symbol) =
+    filter(_loads_under(sys, owner_type, owner_id)) do (type_name, id)
+        load = _component(sys, type_name, id)
+        hasproperty(load, field) && !iszero(get_value(load, field))
+    end
+
+_share_unit(field::Symbol) = field == :max_active_power ? "MW" : "MVAr"
+
+# A load's maximum in natural units, and per unit of its own `base_power`.
+_load_max_natural(sys::OpenAPISystem, load, field::Symbol) =
+    if uses_per_unit(sys)
+        get_value(load, field) * get_value(load, :base_power, "MVA")
+    else
+        get_value(load, field, _share_unit(field))
+    end
+_load_max_cu(sys::OpenAPISystem, load, field::Symbol) =
+    if uses_per_unit(sys)
+        get_value(load, field)
+    else
+        get_value(load, field, _share_unit(field)) / get_value(load, :base_power, "MVA")
+    end
+
+"""
+A load's factor on a stated zone or area series it shares: its share of the aggregation's
+total, `max / Σ max`, per unit of its own `base_power`. Loads rebased so their maximum is
+their `base_power` all get `1 / Σ max`, so they share one array.
+"""
+function _load_share(sys::OpenAPISystem, entry::TimeSeriesPointer, load_type, load_id)
+    reg = get_registry(sys)
+    zone_type, zone_id =
+        find_by_name(reg, category_to_type_names(entry.category), entry.component_name)
+    field = LOAD_SHARE_FIELDS[entry.quantity_kind]
+    total = sum(
+        _load_max_natural(sys, _component(sys, t, id), field) for
+        (t, id) in _sharing_loads(sys, zone_type, zone_id, field)
+    )
+    return _load_max_cu(sys, _component(sys, load_type, load_id), field) / total
 end
 
 """Apply the pointer's normalization: `"max"` divides by the series' own peak, a
@@ -361,8 +418,9 @@ const RESERVOIR_FLOW_MULTIPLIERS = ("get_inflow", "get_outflow")
 How a pointer's normalized values are stored on one owner: the factor they are multiplied by
 and the units labels they carry.
 
-An entry that states its units is stored as given, under those labels. The rest of this is the
-legacy multiplier convention:
+An entry that states its units is stored as given, under those labels, except on the loads a
+stated zone or area series fans out to: each takes its share of it (`_load_share`) in CU of its
+own `base_power`. The rest of this is the legacy multiplier convention:
 
 PowerSystems takes `CU` only for a device's power and a battery's stored energy; everything
 else is natural units only. So any other multiplier is converted to natural units here rather
@@ -394,6 +452,10 @@ function _series_basis(
     multiplier = entry.scaling_factor_multiplier
     if isnothing(multiplier)
         isnothing(entry.units) && return 1.0, (;)
+        if owner_type in LOAD_TYPES && haskey(AGGREGATION_BUS_PROPERTIES, entry.category)
+            return _load_share(sys, entry, owner_type, owner_id),
+            (quantity_kind = entry.quantity_kind, per_unit_of = "base_power")
+        end
         return 1.0, (units = entry.units, quantity_kind = entry.quantity_kind)
     end
     if haskey(AGGREGATION_BUS_PROPERTIES, owner_type)

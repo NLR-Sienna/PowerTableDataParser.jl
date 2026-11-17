@@ -374,3 +374,58 @@ end
         @test !PSY.has_time_series(load2, PSY.SingleTimeSeries, "requirement")
     end
 end
+
+@testset "a stated zone series is shared out to its loads by their maxima" begin
+    mktempdir() do dir
+        _write_pointer_fixtures(dir)
+        pointer_file = joinpath(dir, "stated_zone.json")
+        open(pointer_file, "w") do io
+            JSON.print(io, [
+                Dict(
+                    "category" => "LoadZone",
+                    "component_name" => "Zone1",
+                    "name" => "max_active_power",
+                    "units" => "MW",
+                    "quantity_kind" => "active_power",
+                    "data_file" => "zone.csv",
+                    "resolution" => 3600,
+                    "type" => "SingleTimeSeries",
+                ),
+            ])
+        end
+        sys = _pointer_test_system()
+        load1 = PSY.get_component(PSY.PowerLoad, sys, "load1")
+        load3 = PSY.get_component(PSY.PowerLoad, sys, "load3")
+        # load3 is not rebased: half load1's maximum on the same base.
+        PSY.set_max_active_power!(load3, 50.0u"MW")
+        PDP.add_time_series_from_pointers!(sys, pointer_file)
+
+        zone = PSY.get_component(PSY.LoadZone, sys, "Zone1")
+        zone_ts = PSY.get_time_series(PSY.SingleTimeSeries, zone, "max_active_power")
+        @test _ts_values(zone, "max_active_power") == _ZONE_VALUES
+        @test IS.get_units(zone_ts) == "MW"
+
+        # Upstream's rule: each bus takes the regional series times its share of the
+        # region's load (100 and 50 of 150 MW), stored per unit of its own base.
+        for (load, share) in ((load1, 100 / 150), (load3, 50 / 150))
+            ts = PSY.get_time_series(PSY.SingleTimeSeries, load, "max_active_power")
+            @test IS.get_per_unit_of(ts) == "base_power"
+            @test IS.get_quantity_kind(ts) == "active_power"
+            @test PSY.get_time_series_values(
+                PSY.SingleTimeSeries, load, "max_active_power", u"MW",
+            ) ≈ _ZONE_VALUES .* share
+        end
+        # The shunt has no maximum, so no share.
+        shunt = PSY.get_component(PSY.FixedAdmittance, sys, "shunt1")
+        @test !PSY.has_time_series(shunt)
+
+        # Rebased loads (maximum = base_power) share one array.
+        sys = _pointer_test_system()
+        PDP.add_time_series_from_pointers!(sys, pointer_file)
+        arrays = [
+            _ts_values(PSY.get_component(PSY.PowerLoad, sys, n), "max_active_power")
+            for n in ("load1", "load3")
+        ]
+        @test arrays[1] == arrays[2] == _ZONE_VALUES ./ 200.0
+    end
+end
