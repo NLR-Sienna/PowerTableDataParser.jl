@@ -288,7 +288,12 @@ end
 The loads under an aggregation that take a share of its stated series: those with a
 `field` maximum. A `FixedAdmittance` has none (its draw depends on voltage), so no share.
 """
-_sharing_loads(sys::OpenAPISystem, owner_type::AbstractString, owner_id::Int, field::Symbol) =
+_sharing_loads(
+    sys::OpenAPISystem,
+    owner_type::AbstractString,
+    owner_id::Int,
+    field::Symbol,
+) =
     filter(_loads_under(sys, owner_type, owner_id)) do (type_name, id)
         load = _component(sys, type_name, id)
         hasproperty(load, field) && !iszero(get_value(load, field))

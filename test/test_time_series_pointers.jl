@@ -237,13 +237,16 @@ end
 
 @testset "stated units and quantity come as a pair, not mixed with a multiplier" begin
     entry(; kw...) = Dict{String, Any}(
-        "name" => "max_active_power", "component_name" => "g", (string(k) => v for (k, v) in kw)...,
+        "name" => "max_active_power", "component_name" => "g",
+        (string(k) => v for (k, v) in kw)...,
     )
     @test PDP.stated_labels(entry()) == (nothing, nothing)
     @test PDP.stated_labels(entry(; units = "MW", quantity_kind = "active_power")) ==
           ("MW", "active_power")
     @test_throws IS.DataFormatError PDP.stated_labels(entry(; units = "MW"))
-    @test_throws IS.DataFormatError PDP.stated_labels(entry(; quantity_kind = "active_power"))
+    @test_throws IS.DataFormatError PDP.stated_labels(
+        entry(; quantity_kind = "active_power"),
+    )
     @test_throws IS.DataFormatError PDP.stated_labels(
         entry(; units = "MW", quantity_kind = "active_power", normalization_factor = 50.0),
     )
@@ -380,18 +383,21 @@ end
         _write_pointer_fixtures(dir)
         pointer_file = joinpath(dir, "stated_zone.json")
         open(pointer_file, "w") do io
-            JSON.print(io, [
-                Dict(
-                    "category" => "LoadZone",
-                    "component_name" => "Zone1",
-                    "name" => "max_active_power",
-                    "units" => "MW",
-                    "quantity_kind" => "active_power",
-                    "data_file" => "zone.csv",
-                    "resolution" => 3600,
-                    "type" => "SingleTimeSeries",
-                ),
-            ])
+            JSON.print(
+                io,
+                [
+                    Dict(
+                        "category" => "LoadZone",
+                        "component_name" => "Zone1",
+                        "name" => "max_active_power",
+                        "units" => "MW",
+                        "quantity_kind" => "active_power",
+                        "data_file" => "zone.csv",
+                        "resolution" => 3600,
+                        "type" => "SingleTimeSeries",
+                    ),
+                ],
+            )
         end
         sys = _pointer_test_system()
         load1 = PSY.get_component(PSY.PowerLoad, sys, "load1")

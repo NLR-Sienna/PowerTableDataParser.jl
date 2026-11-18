@@ -36,7 +36,8 @@ function stated_labels(entry::AbstractDict)
     (isnothing(units) || isnothing(quantity_kind)) && throw(
         IS.DataFormatError("$where states only one of units and quantity_kind"),
     )
-    legacy = filter(k -> haskey(entry, k), ["scaling_factor_multiplier", "normalization_factor"])
+    legacy =
+        filter(k -> haskey(entry, k), ["scaling_factor_multiplier", "normalization_factor"])
     isempty(legacy) || throw(
         IS.DataFormatError(
             "$where states units and also $(join(legacy, " and ")); a stated series is " *
