@@ -56,7 +56,7 @@ end
     # One row per staged series. The sidecar holds the values; these rows let a consumer see
     # what the bundle contains, and on what basis, without opening the store.
     rows = doc["time_series_associations"]
-    @test length(rows) == 358
+    @test length(rows) == 320
     row = first(rows)
     @test row["time_series_type"] == "SingleTimeSeries"
     @test row["owner_category"] == "Component"

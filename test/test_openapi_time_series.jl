@@ -26,10 +26,10 @@ end
 
 @testset "one staged row per owner, both resolutions kept" begin
     sys = _built()
-    # 256 pointer entries (after the test system data filter), of which the 6 zone load
-    # series fan out to the loads; each zone keeps a natural-units series of its own.
-    @test length(sys.time_series) == 358
-    @test length(_rows_by_series(sys.time_series)) == 262
+    # 218 pointer entries. The 6 zone load series also fan out to the 51 loads, and the
+    # loads of one zone share one array.
+    @test length(sys.time_series) == 320
+    @test length(_rows_by_series(sys.time_series)) == 224
     resolutions = Set(IS.get_resolution(row.series) for row in sys.time_series)
     @test resolutions ==
           Set([Dates.Millisecond(Dates.Hour(1)), Dates.Millisecond(Dates.Minute(5))])
@@ -60,15 +60,12 @@ end
     @test_throws IS.DataFormatError PDP.keep_time_series_resolution!(sys, Dates.Minute(5))
 end
 
-# Owners whose series PowerSystems takes in natural units, so the parser converts them:
-# everything but a device's power and a battery's levels.
-_is_natural(row) = row.owner_type in ("LoadZone", "OnlineReserve", "HydroReservoir")
+# Every RTS pointer entry states its units, so its series stays in them. Only a load's share
+# of its zone's series is per unit of the load's own base.
+_is_natural(row) = row.owner_type != "PowerLoad"
 
-@testset "a multiplier becomes device-base units on normalized values" begin
+@testset "a stated series keeps its units and a load's share is on its own base" begin
     sys = _built()
-    # Every RTS pointer entry declares a scaling_factor_multiplier. Series PowerSystems
-    # takes per unit keep the normalized values, tagged with the device-base label in place
-    # of the removed multiplier metadata; the rest are converted to natural units.
     for row in sys.time_series
         expected = _is_natural(row) ? IS.NU : PDP.COMPONENT_BASE_UNIT_SYSTEM
         @test IS.get_unit_system(row.series) == expected
@@ -85,57 +82,41 @@ end
 
 @testset "a normalized series declares its basis and the quantity it scales to" begin
     sys = _built()
-    # Every RTS pointer declares a multiplier, so every series states a basis. `units` is
-    # set only on the natural-units ones: a per-unit basis is not a units label.
+    # `units` is set only on the natural-units series: a per-unit basis is not a units label.
     for row in sys.time_series
         @test isnothing(IS.get_units(row.series)) == !_is_natural(row)
         @test !isnothing(IS.get_quantity_kind(row.series))
     end
 
-    # The quantity is the multiplier's own, not the accessor name. RTS reservoirs are
-    # accounted in ENERGY, so a level is energy and an inflow active power.
     by_name = Dict(
         IS.get_name(r.series) => IS.get_quantity_kind(r.series) for r in sys.time_series
     )
     @test by_name["max_active_power"] == "active_power"
     @test by_name["requirement"] == "active_power"
-    @test by_name["storage_capacity"] == "energy"
     @test by_name["inflow"] == "active_power"
-    # An ENERGY reservoir's level is in MWh; every other natural series here is power.
-    for row in filter(_is_natural, sys.time_series)
-        expected = IS.get_name(row.series) == "storage_capacity" ? "MW*hr" : "MW"
-        @test IS.get_units(row.series) == expected
-    end
+    @test all(r -> IS.get_units(r.series) == "MW", filter(_is_natural, sys.time_series))
 end
 
-@testset "a reservoir series filed under a turbine lands on its reservoir" begin
+@testset "a stated reservoir inflow is stored as its CSV gives it" begin
     sys = _built()
-    # The RTS pointer file files inflow and storage capacity under the turbines.
-    reservoir_rows = filter(
-        r -> IS.get_name(r.series) in ("inflow", "storage_capacity"),
-        sys.time_series,
-    )
-    @test !isempty(reservoir_rows)
-    @test all(r -> r.owner_type == "HydroReservoir", reservoir_rows)
-    # An inflow is in MW: the profile times the reservoir's 1.0 inflow, read on the system
-    # base as psy5's formulations did.
+    inflow_rows = filter(r -> IS.get_name(r.series) == "inflow", sys.time_series)
+    @test !isempty(inflow_rows)
+    @test all(r -> r.owner_type == "HydroReservoir", inflow_rows)
     raw = only(
         p for p in PDP.read_time_series_pointers(
             joinpath(RTS_GMLC_DIR, "timeseries_pointers.json"),
         )
-        if p.name == "inflow" && p.component_name == "122_HYDRO_1" &&
+        if p.name == "inflow" && p.component_name == "122_HYDRO_1_RESERVOIR_head" &&
         p.resolution == Dates.Millisecond(Dates.Hour(1))
     )
-    turbine_id = PDP.get_id(PDP.get_registry(sys), "HydroTurbine", "122_HYDRO_1")
+    reservoir_id = PDP.get_id(PDP.get_registry(sys), "HydroReservoir", raw.component_name)
     row = only(
-        r for r in reservoir_rows if IS.get_name(r.series) == "inflow" &&
-        r.owner_id == PDP._head_reservoir_id(sys, "HydroTurbine", turbine_id) &&
-        IS.get_resolution(r.series) == raw.resolution
+        r for r in inflow_rows if
+        r.owner_id == reservoir_id && IS.get_resolution(r.series) == raw.resolution
     )
     df = DataFrames.DataFrame(PDP.CSV.File(raw.data_file))
     values, _ = PDP.read_pointer_csv_values(df, raw.component_name, raw.resolution)
-    @test IS.get_array(row.series) ≈
-          PDP._normalized(values, raw.normalization_factor) .* PDP.get_base_power(sys)
+    @test IS.get_array(row.series) == values
 
     # A generator with no reservoir cannot carry one.
     entry = PDP.TimeSeriesPointer(
@@ -214,7 +195,8 @@ end
 
     # No multiplier means no declared basis, so no quantity to name either.
     bare = PDP.TimeSeriesPointer(
-        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), nothing, nothing, nothing,
+        "Component", "x", "inflow", 1.0, "f.csv", Dates.Hour(1), nothing, nothing,
+        nothing,
     )
     @test isnothing(
         PDP._series_quantity_kind(

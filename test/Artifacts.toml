@@ -11,9 +11,9 @@ lazy = true
 # PowerSystemCaseBuilder.DATA_DIR; vendored here so this package does not depend
 # on PowerSystemCaseBuilder.
 [CaseData]
-git-tree-sha1 = "cdbdea882cd7cb977ad71ef23a45b5f1fb0c1f75"
+git-tree-sha1 = "fb66774d84f5f9b3f65515ad38d3002729a65c15"
 lazy = true
 
     [[CaseData.download]]
-    url = "https://github.com/Sienna-Platform/PowerSystemsTestData/archive/refs/tags/5.0-dev3.tar.gz"
-    sha256 = "6a5977918fe26f48f0e545cc15d202ad0f43e0e2713ec2649aa2c3e1052e44ad"
+    url = "https://github.com/Sienna-Platform/PowerSystemsTestData/archive/refs/tags/5.0-dev19.tar.gz"
+    sha256 = "07139725681a12ffa203abe89ab51c79bdee9466ed82c69b4fdac996abe0a80e"
